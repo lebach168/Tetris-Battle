@@ -4,9 +4,13 @@ import {
   BOARD_HEIGHT,
   BOARD_WIDTH,
   TetrominoType,
+  RotationState,
+  WALL_KICK_I,
+  WALL_KICK_JLSTZ,
 } from "@/types/tetris";
 
 export function rotateRight(shape: number[][]): number[][] {
+  
   const row = shape.length;
   const col = shape[0].length;
 
@@ -18,6 +22,7 @@ export function rotateRight(shape: number[][]): number[][] {
       rotated[i][j] = shape[row - 1 - j][i];
     }
   }
+  
   return rotated;
 }
 export function rotateLeft(shape: number[][]): number[][] {
@@ -35,11 +40,12 @@ export function rotateLeft(shape: number[][]): number[][] {
   return rotated;
 }
 export function GravityCurve(level: number): number {
-  if(level==0) return 1000;
+  // if (level == 0) return 1000;
   const framesPerCell = Math.max(1, Math.floor((53 - level) / 2) + 1);
   return framesPerCell * (1000 / 60); // ms per cell
 }
 export function generateBlocks_7bag(n: number): TetrominoType[] {
+  
   const block_list: TetrominoType[] = [];
   const shuffleArray = (array: TetrominoType[]) => {
     for (let i = array.length - 1; i > 0; i--) {
@@ -77,33 +83,28 @@ export function createEmptyBoard(): BoardGrid {
     .map(() => Array(BOARD_WIDTH).fill({ value: 0, type: "0" }));
 }
 
-export function hasCollision(
-  board: BoardGrid,
-  activeBlock: Block,
-  dCol: number,
-  dRow: number
-): boolean {
+export const hasCollision = (board: BoardGrid, block: Block, dCol: number, dRow: number) => {
   let isCollision = false;
+  block.shape
+      .filter((row) => row.some((isSet) => isSet))
+      .forEach((row, rowIndex) => {
+          row.forEach((cell, colIndex) => {
+              if (cell) {
+                  if (colIndex + dCol >= BOARD_WIDTH ||
+                      colIndex + dCol < 0 ||
+                      rowIndex + dRow >= BOARD_HEIGHT ||
+                      board[rowIndex + dRow][colIndex + dCol].value == 1
+                  ) {
 
-  activeBlock.shape
-    .filter((row) => row.some((isSet) => isSet))
-    .forEach((row, rowIndex) => {
-      row.forEach((cell, colIndex) => {
-        if (cell) {
-          if (
-            colIndex + dCol >= BOARD_WIDTH ||
-            colIndex + dCol < 0 ||
-            rowIndex + dRow >= BOARD_HEIGHT ||
-            board[rowIndex + dRow][colIndex + dCol].value !== 0
-          ) {
-            isCollision = true;
-          }
-        }
-      });
-    });
+                      isCollision = true;
+                  }
+              }
 
-  return isCollision;
+          })
+      })
+  return isCollision
 }
+
 export const findLandingPosition = (
   curBoard: BoardGrid,
   block: Block,
@@ -129,27 +130,57 @@ export const addBlockToBoard = (
   block: Block
 ) => {
   const landingRow = findLandingPosition(board, block, dRow, dCol);
-  // const blockValue = VALUE_MAP[block.type];
-  block.shape.forEach((row, rowIndex) => {
+  
+  //render block ghost
+  if (landingRow !== dRow) {
+    block.shape.filter((row) => row.some((isSet) => isSet)).forEach((row, rowIndex) => {
+      row.forEach((cell, colIndex) => {
+        if (cell) {
+          const ghostRow = landingRow + rowIndex;
+          const ghostCol = dCol + colIndex;
+          if (ghostRow < BOARD_HEIGHT && ghostCol < BOARD_WIDTH) {
+            board[ghostRow][ghostCol] = { value: 0, type: "ghost" };
+          }
+        }
+      });
+    });
+  }
+
+  block.shape.filter((row) => row.some((isSet) => isSet)).forEach((row, rowIndex) => {
     row.forEach((cell, colIndex) => {
       if (cell) {
-        if (dRow !== landingRow) {
-          board[dRow + rowIndex][colIndex + dCol] = {
-            value: 1,
-            type: cell.toString(),
-          };
-          const obj = board[landingRow + rowIndex][colIndex + dCol];
-          board[landingRow + rowIndex][colIndex + dCol] = {
-            ...obj,
-            type: "ghost",
-          };
-        } else {
-          board[dRow + rowIndex][colIndex + dCol] = {
-            value: 1,
-            type: cell.toString(),
-          };
+        const currentRow = dRow + rowIndex;
+        const currentCol = dCol + colIndex;
+        if (currentRow < BOARD_HEIGHT && currentCol < BOARD_WIDTH) {
+          board[currentRow][currentCol] = { value: 1, type: cell.toString() };
         }
       }
     });
   });
+};
+export const  getWallKickData = (
+  tetrominoType: TetrominoType,
+  fromState: RotationState,
+  toState: RotationState
+): [number, number][] =>{
+  if (tetrominoType === "O") return [[0, 0]]; // O không cần wall kick
+  const key = `${fromState}->${toState}`;
+  
+  console.log(`Getting wall kick for ${tetrominoType}: ${key}`); // Debug
+  return tetrominoType === "I" ? WALL_KICK_I[key] : WALL_KICK_JLSTZ[key];
+}
+
+export const clearLines = (curBoard: BoardGrid, rows: number[]): BoardGrid => {
+  const newBoard = createEmptyBoard();
+  let j = BOARD_HEIGHT - 1; 
+
+  for (let i = BOARD_HEIGHT - 1; i >= 0; i--) {
+      if (rows.includes(i)) continue; 
+      for (let colIndex = 0; colIndex < BOARD_WIDTH; colIndex++) {
+          newBoard[j][colIndex] = curBoard[i][colIndex];
+      }
+      j--; 
+  }
+
+  return newBoard;
 };

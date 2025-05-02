@@ -1,17 +1,13 @@
 "use client";
 
 import { BOARD_WIDTH, BoardGrid, VISIBLE_HEIGHT } from "@/types/tetris";
-import Block from "./Block";
+import Block from "./Cell";
 
 const ROWS = VISIBLE_HEIGHT;
 const COLS = BOARD_WIDTH;
 
 export default function Board({ board }: { board: BoardGrid }) {
   
-  if (!board || !Array.isArray(board) || board.length !== ROWS || !board.every(row => Array.isArray(row) && row.length === COLS)) {
-    return <div>Invalid board data</div>;
-  }
-
   return (
     <div
       className={`
