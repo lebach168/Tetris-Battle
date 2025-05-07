@@ -1,0 +1,6 @@
+server:
+ port: 8080
+ read_timeout: "0s"   #0s for real-time connection
+ write_timeout: "0s"
+ websocket_ping_interval: "240s"
+ max_rooms: 100
