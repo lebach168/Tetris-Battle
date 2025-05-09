@@ -4,59 +4,76 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"math/big"
 	"net/http"
 	"sync"
 	"tetris-be/util"
-	"math/big"
-
 )
-type Room struct{
-	RoomId string	`json:"roomId"`
-	Player1 string 	`json:"p1"` // Client ID
-	Player2 string 	`json:"p2"`//
+
+type Room struct {
+	RoomId  string `json:"roomId"`
+	Player1 string `json:"p1"` // Client ID
+	Player2 string `json:"p2"` //
 
 }
+
 var (
-	rooms = make(map[string]*Room)
+	rooms   = make(map[string]*Room)
 	roomsMu sync.RWMutex
 )
+
+// fixed mock data
+func init() {
+	roomsMu.Lock()
+	rooms["123456"] = &Room{
+		RoomId:  "123456",
+		Player1: "p1",
+		Player2: "p2",
+	}
+	roomsMu.Unlock()
+	fmt.Println("init data for test...")
+}
+
 const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ123456789"
 const roomIDLength = 6
+
 func generateRoomID() (string, error) {
-    b := make([]byte, roomIDLength)
-    maxAttempts := 10
+	b := make([]byte, roomIDLength)
+	maxAttempts := 10
 
-    for attempts := 0; attempts < maxAttempts; attempts++ {
-        for i := range b {
-            randIndex, err := rand.Int(rand.Reader, big.NewInt(int64(len(chars))))
-            if err != nil {
-                return "", fmt.Errorf("Failed to generate random index")
-            }
-            b[i] = chars[randIndex.Int64()]
-        }
+	for attempts := 0; attempts < maxAttempts; attempts++ {
+		for i := range b {
+			randIndex, err := rand.Int(rand.Reader, big.NewInt(int64(len(chars))))
+			if err != nil {
+				return "", fmt.Errorf("Failed to generate random index")
+			}
+			b[i] = chars[randIndex.Int64()]
+		}
 
-        roomID := string(b)
-        if rooms[roomID] == nil {
-            return roomID, nil
-        }
-    }
+		roomID := string(b)
+		if rooms[roomID] == nil {
+			return roomID, nil
+		}
+	}
 
-    return "", fmt.Errorf("Failed to generate unique room ID after multiple attempts")
+	return "", fmt.Errorf("Failed to generate unique room ID after multiple attempts")
 }
-//TODO list room
+
 func ListRooms(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("List room...")
-    roomsMu.RLock()
-    var roomList []Room
-    for _, v := range rooms {
-        roomList = append(roomList, *v)
-    }
-    roomsMu.RUnlock()
-    util.RespondWithJSON(w, http.StatusOK, roomList)
+	roomsMu.RLock()
+	var roomList []Room
+	for _, v := range rooms {
+		roomList = append(roomList, *v)
+	}
+	roomsMu.RUnlock()
+	util.RespondWithJSON(w, http.StatusOK, roomList)
 }
+
 type CreateRoomRequest struct {
-	PlayerID  string `json:"playerId"`
+	PlayerID string `json:"playerId"`
 }
+
 func CreateRoom(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("Creating room...")
 
@@ -98,17 +115,15 @@ func CreateRoom(w http.ResponseWriter, r *http.Request) {
 	}
 	rooms[roomID] = room
 	// Send response
-	util.RespondWithJSON(w, http.StatusOK,room)
+	util.RespondWithJSON(w, http.StatusOK, room)
 }
 
-
-
-
-//TODO join room
+// TODO join room
 type JoinRoomRequest struct {
-	PlayerID  	string `json:"playerId"`
-	RoomID 		string 	`json:"roomId"`
+	PlayerID string `json:"playerId"`
+	RoomID   string `json:"roomId"`
 }
+
 func JoinRoom(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("Joining room...")
 
@@ -151,12 +166,12 @@ func JoinRoom(w http.ResponseWriter, r *http.Request) {
 
 	util.RespondWithJSON(w, http.StatusOK, room)
 }
-func DeleteRoom(roomID string){
+func DeleteRoom(roomID string) {
 	roomsMu.Lock()
-	_,ok :=rooms[roomID]
-	if(ok){
-		delete(rooms,roomID)
+	_, ok := rooms[roomID]
+	if ok {
+		delete(rooms, roomID)
 	}
-	
+
 	roomsMu.Unlock()
 }

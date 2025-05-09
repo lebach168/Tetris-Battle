@@ -3,6 +3,7 @@ package util
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"os"
 	"time"
@@ -11,11 +12,11 @@ import (
 )
 
 type ServerConfig struct {
-	Port                int           `yaml:"port"`
-	ReadTimeout         time.Duration `yaml:"read_timeout"`
-	WriteTimeout        time.Duration `yaml:"write_timeout"`
+	Port                  int           `yaml:"port"`
+	ReadTimeout           time.Duration `yaml:"read_timeout"`
+	WriteTimeout          time.Duration `yaml:"write_timeout"`
 	WebSocketPingInterval time.Duration `yaml:"websocket_ping_interval"`
-	MaxRooms            int           `yaml:"max_rooms"`
+	MaxRooms              int           `yaml:"max_rooms"`
 }
 
 type Config struct {
@@ -41,25 +42,28 @@ func LoadConfig(path string) (*Config, error) {
 	return &cfg, nil
 }
 
-
-func JSONEncode(data interface{}) ([]byte, error) {
-    return json.Marshal(data)
+func JSONEncode(data interface{}) []byte {
+	jsonData, err := json.Marshal(data)
+	if err != nil {
+		log.Println("Error: ", err)
+	}
+	return jsonData
 }
 
-
-func JSONDecode(data []byte, v interface{}) error {
-    return json.Unmarshal(data, v)
+func JSONDecode(data []byte, v interface{}) {
+	err := json.Unmarshal(data, v)
+	if err != nil {
+		log.Println("Invalid %T value", v)
+	}
 }
-
 
 func RespondWithError(w http.ResponseWriter, statusCode int, message string) {
-    w.WriteHeader(statusCode)
-    json.NewEncoder(w).Encode(map[string]string{"error": message})
+	w.WriteHeader(statusCode)
+	json.NewEncoder(w).Encode(map[string]string{"error": message})
 }
 
-
 func RespondWithJSON(w http.ResponseWriter, statusCode int, data interface{}) {
-    w.Header().Set("Content-Type", "application/json")
-    w.WriteHeader(statusCode)
-    json.NewEncoder(w).Encode(data)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+	json.NewEncoder(w).Encode(data)
 }

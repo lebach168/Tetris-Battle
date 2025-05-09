@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"sync"
+	"tetris-be/util"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -13,9 +14,8 @@ import (
 
 type WSMessage struct {
 	Type    string          `json:"type"`    // e.g. "key", "checksum", etc.
-	To      string          `json:"To"`      // receiver : all |  player1ID | player2ID
+	To      string          `json:"to"`      // receiver : all |  player1ID | player2ID
 	Payload json.RawMessage `json:"payload"` //
-
 }
 type KeyPayload struct {
 	Keys []string `json:"keys"` // e.g. ["left", "rotate", "drop"]
@@ -39,12 +39,16 @@ type GameOverPayload struct {
 type StartPayload struct {
 	StartAt int64 `json:"startAt"` // timestamp để tất cả bắt đầu đồng bộ
 }
-
+type InitPayload struct {
+	ListBlock []int `json:"listBlock"`
+}
 type Client struct {
 	ID     string
 	RoomID string
 	Conn   *websocket.Conn
-	Send   chan []byte // channel để gửi ngược ra client
+	Send   chan []byte // channel để gửi ra client
+	once   sync.Once
+	quit   chan struct{}
 }
 
 var (
@@ -56,88 +60,65 @@ var upgrader = websocket.Upgrader{
 }
 
 func WebSocketHandler(w http.ResponseWriter, r *http.Request) {
-	
+
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Println("Upgrade failed:", err)
 		return
 	}
 	fmt.Println("Create websocket connection...")
-	conn.SetReadLimit(1024)
+	conn.SetReadLimit(1024 * 10)
 	conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 	conn.SetPongHandler(func(string) error {
 		conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 		return nil
 	})
 
-	//close connection after use
-	defer conn.Close()
 	roomID := r.URL.Query().Get("room")
+	playerId := r.URL.Query().Get("player")
 	client := &Client{
 		Conn:   conn,
-		Send:   make(chan []byte, 2),
+		Send:   make(chan []byte, 256),
 		RoomID: roomID,
-		ID:     r.URL.Query().Get("player"),
+		ID:     playerId,
+		once:   sync.Once{},
+		quit:   make(chan struct{}),
 	}
 
 	roomClientsMu.Lock()
 	roomClients[roomID] = append(roomClients[roomID], client)
 	roomClientsMu.Unlock()
 
+	if len(roomClients[roomID]) == 2 {
+		msg := []byte(`{"type":"ready","payload":{}}`)
+		broadcastToAll(roomID, msg)
+	}
+
+	defer client.cleanup()
+
 	//catch end broadcast message
-	var wg sync.WaitGroup
-    wg.Add(2) // Chờ 2 goroutine
-    go func() {
-        defer wg.Done()
-        client.messageReceiver()
-    }()
-    go func() {
-        defer wg.Done()
-        client.messageSender()
-    }()
-    wg.Wait()
+
 	// Flow:  ClientJS -message-> Server(WebsocketHandler) --> messageReceiver
 	// 																	|
 	// 																	↓
 	// 			 messageSender <-- channel Send <-- Broadcast<--messageHandler
 
 	//cleanup function
-	defer func(roomID string) {
-		conn.Close()
-		roomClientsMu.Lock()
-		if clients, ok := roomClients[client.RoomID]; ok {
-			for i, c := range clients {
-				if c == client {
-					roomClients[client.RoomID] = append(clients[:i], clients[i+1:]...)
-					break
-				}
-			}
-			if len(roomClients[client.RoomID]) == 0 {
-				delete(roomClients, client.RoomID)
-				//DeleteRoom(roomID)
-			}
-		}
-		
-		roomClientsMu.Unlock()
-		close(client.Send)
-	}(roomID)
 
+	<-client.quit //channel bắt tín hiệu dừng connection
 }
 
 func handleWSMessage(sender *Client, message []byte) {
-	var msg WSMessage
-	if err := json.Unmarshal(message, &msg); err != nil {
-		log.Printf("Invalid message: %v", err)
-		return
-	}
+	var wsMsg WSMessage
+	util.JSONDecode(message, wsMsg)
 
-	switch msg.Type {
+	switch wsMsg.Type {
+	case "init":
+		//FE send init mỗi mỗi khi nhận được msg ready.
+		broadcastToOthers(sender, message)
+		//FE bắt init ở bên useTetrisEventSource
 	case "key":
-		var payload KeyPayload
-		if err := json.Unmarshal(msg.Payload, &payload); err != nil {
-			log.Println("Invalid key payload")
-			return
-		}
+
 		broadcastToOthers(sender, message)
 	//TODO
 	// case "checksum":
@@ -156,10 +137,18 @@ func handleWSMessage(sender *Client, message []byte) {
 		broadcastToAll(sender.RoomID, message)
 
 	case "start":
-		broadcastToAll(sender.RoomID, message)
-
+		payload := StartPayload{
+			StartAt: (time.Now().UnixNano() + 2000) / int64(time.Millisecond),
+		}
+		msg := util.JSONEncode(map[string]interface{}{
+			"type":    "start",
+			"payload": payload,
+		})
+		broadcastToAll(sender.RoomID, msg)
+	case "out_room":
+		close(sender.quit)
 	default:
-		log.Println("Unknown message type:", msg.Type)
+		log.Println("Unknown message type:", wsMsg.Type)
 	}
 }
 
@@ -197,8 +186,7 @@ func broadcastToOthers(sender *Client, msg []byte) {
 			select {
 			case client.Send <- msg:
 			default:
-				close(client.Send)
-				delete(roomClients, client.ID)
+				log.Printf("Client %s channel full, skipping message", client.ID)
 			}
 		}
 	}
@@ -209,8 +197,36 @@ func broadcastToAll(roomId string, msg []byte) {
 		select {
 		case client.Send <- msg:
 		default:
-			close(client.Send)
-			delete(roomClients, client.ID)
+			log.Printf("Client %s channel full, skipping message", client.ID)
 		}
 	}
+}
+func (c *Client) cleanup() {
+	c.once.Do(func() {
+		if c.Conn != nil {
+			c.Conn.WriteMessage(websocket.CloseMessage, []byte{})
+			c.Conn.Close()
+			c.Conn = nil
+		}
+		close(c.Send)
+		close(c.quit)
+		roomClientsMu.Lock()
+		defer roomClientsMu.Unlock()
+		if clients, ok := roomClients[c.RoomID]; ok {
+			for i, client := range clients {
+				if client == c {
+					roomClients[c.RoomID] = append(clients[:i], clients[i+1:]...)
+					break
+				}
+			}
+			if len(roomClients[c.RoomID]) < 2 {
+				msg := []byte(`{"type":"unready","payload":{}}`)
+				broadcastToAll(c.RoomID, msg)
+			}
+			if len(roomClients[c.RoomID]) == 0 {
+				delete(roomClients, c.RoomID)
+				//DeleteRoom(roomID)
+			}
+		}
+	})
 }

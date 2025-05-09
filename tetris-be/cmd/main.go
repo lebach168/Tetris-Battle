@@ -11,6 +11,7 @@ import (
 	"github.com/gorilla/mux"
 
 	"tetris-be/api"
+	_ "tetris-be/handler"
 	"tetris-be/util"
 )
 
@@ -27,8 +28,7 @@ func main() {
 	// REST API endpoints
 	api.RegisterRoutes(r)
 
-
-	// Middleware 
+	// Middleware
 	//r.Use(loggingMiddleware)
 
 	// Server setup
