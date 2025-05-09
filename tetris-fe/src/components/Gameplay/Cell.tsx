@@ -7,7 +7,7 @@ type BlockProps = {
   size?: number;
 };
 
-const Block: React.FC<BlockProps> = ({ type, size = 20 }) => {
+const Cell: React.FC<BlockProps> = ({ type, size = 20 }) => {
   const borderThickness = 3;
   const innerSize = size - borderThickness;
 
@@ -132,4 +132,4 @@ const Block: React.FC<BlockProps> = ({ type, size = 20 }) => {
   );
 };
 
-export default React.memo(Block);
+export default React.memo(Cell);

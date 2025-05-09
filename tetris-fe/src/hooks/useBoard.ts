@@ -20,7 +20,6 @@ import { useReducer } from "react";
         available height: 20;
 
 */
-
 type BoardState = {
   board: BoardGrid;
   activeBlock?: Block;

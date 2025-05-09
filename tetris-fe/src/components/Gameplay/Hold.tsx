@@ -1,6 +1,6 @@
 "use client";
 import { renderShapeMatrix } from "@/lib/utils";
-import { Block } from "@/types/tetris"; // hoặc kiểu bạn dùng
+import { Block } from "@/types/tetris"; 
 
 
 export default function Hold({ holdBlock }: { holdBlock?: Block }) {

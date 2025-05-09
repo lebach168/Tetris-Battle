@@ -1,7 +1,7 @@
 "use client";
 
 import { BOARD_WIDTH, BoardGrid, VISIBLE_HEIGHT } from "@/types/tetris";
-import Block from "./Cell";
+import Cell from "./Cell";
 
 const ROWS = VISIBLE_HEIGHT;
 const COLS = BOARD_WIDTH;
@@ -26,7 +26,7 @@ export default function Board({ board }: { board: BoardGrid }) {
     >
       {board.flatMap((row, rowIndex) =>
         row.map((cell, colIndex) => (
-          <Block
+          <Cell
             key={`${rowIndex}-${colIndex}`}
             type={cell.type || "empty"}
             size={20}

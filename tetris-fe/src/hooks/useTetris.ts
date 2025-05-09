@@ -2,7 +2,16 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useBoard } from "./useBoard";
-import { Block, BOARD_HEIGHT, BoardGrid, RotationState, TETROMINO_SHAPES, TetrominoType, TickSpeed, VISIBLE_HEIGHT } from "@/types/tetris";
+import {
+  Block,
+  BOARD_HEIGHT,
+  BoardGrid,
+  RotationState,
+  TETROMINO_SHAPES,
+  TetrominoType,
+  TickSpeed,
+  VISIBLE_HEIGHT,
+} from "@/types/tetris";
 import {
   hasCollision,
   addBlockToBoard,
@@ -12,6 +21,9 @@ import {
   rotateRight,
   createEmptyBoard,
 } from "@/lib/gamelogic";
+import { useWebSocket } from "@/components/WebSocketContext";
+import { convertTetrominoToNumArray } from "@/lib/utils";
+import { InputBuffer, WSMessage } from "@/types/common";
 
 const TickSpeedType = {
   DropLevel: (level: number) => {
@@ -24,10 +36,11 @@ export const useTetris = (): {
   board: BoardGrid;
   startGame: () => void;
   isPlaying: boolean;
+  isReady:boolean;
 } => {
-  const level =1;//temp
-  const [{ board, activeBlock, dRow, dCol, isHoldAvailable, holdBlock, nextBlockIndex}, dispatchBoard] =
-    useBoard();
+  const level = 1; //temp
+  const [{ board, activeBlock, dRow, dCol, isHoldAvailable, holdBlock, nextBlockIndex }, dispatchBoard] = useBoard();
+  const [isReady, setIsReady] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [tickSpeed, setTickSpeed] = useState<TickSpeed | null>(TickSpeedType.DropLevel(level));
   const [isCommitting, setIsCommitting] = useState(false);
@@ -36,17 +49,19 @@ export const useTetris = (): {
     left: false,
     right: false,
     up: false,
-    rotateCounterClockwise:false,
+    rotateCounterClockwise: false,
     down: false,
     space: false,
     hold: false,
     // botActions: [],
   });
+
+  const { sendMessage, subscribe } = useWebSocket();
   const lastFrameTime = useRef<number>(0);
   const accumulatedTime = useRef<number>(0);
   const animationFrameId = useRef<number | null>(null);
   const listBlock = useRef<TetrominoType[]>([]);
-  //start game
+ 
 
   const handleInputEvent = useCallback(() => {
     const buffer = inputBuffer.current;
@@ -63,13 +78,21 @@ export const useTetris = (): {
     }
     if (buffer.up) {
       const rotatedShape = rotateRight(activeBlock?.shape!);
-      const rotatedBlock:Block = {type:activeBlock!.type,shape:rotatedShape,rState:(activeBlock?.rState!+1)%4 as RotationState}
-      dispatchBoard({ type: "keyevent", payload: { key: "rotate", rotatedBlock} });
+      const rotatedBlock: Block = {
+        type: activeBlock!.type,
+        shape: rotatedShape,
+        rState: ((activeBlock?.rState! + 1) % 4) as RotationState,
+      };
+      dispatchBoard({ type: "keyevent", payload: { key: "rotate", rotatedBlock } });
       buffer.up = false;
     }
-    if(buffer.rotateCounterClockwise){
+    if (buffer.rotateCounterClockwise) {
       const rotatedShape = rotateLeft(activeBlock?.shape!);
-      const rotatedBlock:Block = {type:activeBlock!.type,shape:rotatedShape,rState:(activeBlock?.rState!-1)%4 as RotationState}
+      const rotatedBlock: Block = {
+        type: activeBlock!.type,
+        shape: rotatedShape,
+        rState: ((activeBlock?.rState! - 1) % 4) as RotationState,
+      };
       dispatchBoard({ type: "keyevent", payload: { key: "rotate", rotatedBlock } });
       buffer.rotateCounterClockwise = false;
     }
@@ -86,24 +109,36 @@ export const useTetris = (): {
   const renderBoard = useCallback(() => {
     const renderedBoard = structuredClone(board) as BoardGrid;
     if (isPlaying && activeBlock) {
-      addBlockToBoard(renderedBoard, dRow, dCol, activeBlock);
+      addBlockToBoard(renderedBoard, dRow, dCol, activeBlock); // suspicion
     }
     return renderedBoard.slice(2, 2 + VISIBLE_HEIGHT);
   }, [board, isPlaying, activeBlock, dRow, dCol]);
 
   /*
-    Game flow
+    Game flow  
 
   */
-  const startGame = useCallback(() => {
-    setIsPlaying(true);
+  const init = useCallback(() => {
     const generated = generateBlocks_7bag(1000);
     listBlock.current = generated;
+    // type ở đây là WSmessage
+    sendMessage({
+      type: "init",
+      payload: {
+        listBlock: convertTetrominoToNumArray(generated),
+      },
+    });
+    //type ở đây là board Action để dispatch
     dispatchBoard({
       type: "start",
       payload: { listBlock: generated },
     });
-  }, []);
+  }, [dispatchBoard, sendMessage]);
+
+   //start game
+  const startGame = useCallback(() => {
+    sendMessage({type:"start", payload:{}});
+  },[sendMessage]);
 
   //commit a block
   const commitPosition = useCallback(() => {
@@ -116,7 +151,7 @@ export const useTetris = (): {
     addBlockToBoard(cloneBoard, dRow, dCol, activeBlock);
 
     setTickSpeed(TickSpeedType.DropLevel(0));
-    
+
     dispatchBoard({
       type: "commit",
       payload: { listBlock: listBlock.current, committedBoard: cloneBoard },
@@ -128,7 +163,9 @@ export const useTetris = (): {
 
   const checkGameover = (board: BoardGrid) => {
     const nextBlockType: TetrominoType = listBlock.current[nextBlockIndex];
-    const nextBlock = nextBlockType ? { type: nextBlockType, shape: TETROMINO_SHAPES[nextBlockType] , rState:0 as RotationState} : undefined;
+    const nextBlock = nextBlockType
+      ? { type: nextBlockType, shape: TETROMINO_SHAPES[nextBlockType], rState: 0 as RotationState }
+      : undefined;
     if (nextBlock && hasCollision(board, nextBlock, 4, 0)) {
       dispatchBoard({ type: "end" });
       setIsPlaying(false);
@@ -150,12 +187,9 @@ export const useTetris = (): {
   }, [board, activeBlock, dCol, dRow, isCommitting, commitPosition, dispatchBoard]);
 
   //game loop
-  const gameLoop = useCallback(
-    (timestamp: number) => {
+  const gameLoop = useCallback((timestamp: number) => {
       if (!isPlaying) {
-        if (animationFrameId.current) {
-          cancelAnimationFrame(animationFrameId.current);
-        }
+        animationFrameId.current && cancelAnimationFrame(animationFrameId.current);
         animationFrameId.current = null;
         return;
       }
@@ -164,7 +198,7 @@ export const useTetris = (): {
       lastFrameTime.current = timestamp;
       accumulatedTime.current += deltaTime;
 
-      const currentTickSpeed = tickSpeed ? tickSpeed : TickSpeedType.DropLevel(level);
+      const currentTickSpeed = tickSpeed ?? TickSpeedType.DropLevel(level);
       if (accumulatedTime.current >= currentTickSpeed) {
         gameTick();
         accumulatedTime.current -= currentTickSpeed;
@@ -190,6 +224,27 @@ export const useTetris = (): {
       }
     };
   }, [isPlaying, gameLoop]);
+  //catch websocket message
+  useEffect(() => {
+    const unsub = subscribe((msg: WSMessage) => {
+      switch (msg.type) {
+        case "ready":
+          setIsReady(true);
+          init();
+        case "unready":
+          setIsReady(false);
+        case "start":
+          const delay = msg.payload!.startAt || Date.now() - Date.now(); // server gửi millisec
+          console.log(`[SYNC] Will start in ${delay}ms`);
+          setTimeout(() => {
+            setIsPlaying(true);
+          }, delay);
+        default:
+      }
+    });
+    return unsub; //cleanup callback unsubcribe wsmessage listener
+  }, [subscribe,init]);
+
   //hande event listener
   useEffect(() => {
     if (!isPlaying) return;
@@ -204,7 +259,7 @@ export const useTetris = (): {
       if (event.key === "ArrowDown") inputBuffer.current.down = true;
       if (event.key === "ArrowLeft") inputBuffer.current.left = true;
       if (event.key === "ArrowRight") inputBuffer.current.right = true;
-      if (event.key === "ArrowUp"||event.key === "x") inputBuffer.current.up = true;
+      if (event.key === "ArrowUp" || event.key === "x") inputBuffer.current.up = true;
       if (event.key === "z") inputBuffer.current.rotateCounterClockwise = true;
       if (event.key === "c") inputBuffer.current.hold = true;
     };
@@ -227,7 +282,7 @@ export const useTetris = (): {
         left: false,
         right: false,
         up: false,
-        rotateCounterClockwise:false,
+        rotateCounterClockwise: false,
         down: false,
         space: false,
         hold: false,
@@ -236,8 +291,10 @@ export const useTetris = (): {
   }, [isPlaying]);
 
   return {
-    board:isPlaying ? renderBoard() : createEmptyBoard().slice(2, 2 + VISIBLE_HEIGHT),
+    board: isPlaying ? renderBoard() : createEmptyBoard().slice(2, 2 + VISIBLE_HEIGHT),
     startGame,
     isPlaying,
+    isReady,
+
   };
 };

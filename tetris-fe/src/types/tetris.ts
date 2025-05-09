@@ -3,6 +3,24 @@ export const BOARD_HEIGHT = 22;
 export const VISIBLE_HEIGHT = 20;
 
 export type TetrominoType = "I" | "O" | "T" | "S" | "Z" | "J" | "L";
+export const TetrominoMap: Record<TetrominoType, number> = {
+  I: 1,
+  O: 2,
+  T: 3,
+  S: 4,
+  Z: 5,
+  J: 6,
+  L: 7,
+};
+export const ReverseTetrominoMap: Record<number, TetrominoType> = {
+  1: "I",
+  2: "O",
+  3: "T",
+  4: "S",
+  5: "Z",
+  6: "J",
+  7: "L",
+};
 export type RotationState = 0 | 1 | 2 | 3; 
 export type Block = {
   type: TetrominoType;
@@ -11,7 +29,7 @@ export type Block = {
 }; //shape change when rotate
 
 export type Cell = {
-  value: 1 | 0; // 1 2 3   4 for garbage.
+  value: number; // 1 2 3   4 for garbage.
   type: string; // "0" | "1" | "2" | "3" | "4" | "ghost";
 };
 export type BoardGrid = Cell[][];
