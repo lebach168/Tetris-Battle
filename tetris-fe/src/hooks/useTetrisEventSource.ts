@@ -14,7 +14,7 @@ import {
 } from "@/types/tetris";
 import {
   hasCollision,
-  addBlockToBoard,
+  renderBlockOnBoard,
   generateBlocks_7bag,
   GravityCurve,
   rotateLeft,
@@ -22,7 +22,7 @@ import {
   createEmptyBoard,
 } from "@/lib/gamelogic";
 import { useWebSocket } from "@/components/WebSocketContext";
-import { convertTetrominoToNumArray } from "@/lib/utils";
+import { convertNumToTetrominoArray, convertTetrominoToNumArray } from "@/lib/utils";
 import { InputBuffer, WSMessage } from "@/types/common";
 
 const TickSpeedType = {
@@ -33,9 +33,7 @@ const TickSpeedType = {
 
 export const useTetrisEventSource = (): {
   board: BoardGrid;
-  startGame: () => void;
   isPlaying: boolean;
-  init: () => void;
 } => {
   const level = 1;
   const [{ board, activeBlock, dRow, dCol, isHoldAvailable, holdBlock, nextBlockIndex }, dispatchBoard] = useBoard();
@@ -59,60 +57,21 @@ export const useTetrisEventSource = (): {
   const animationFrameId = useRef<number | null>(null);
   const listBlock = useRef<TetrominoType[]>([]);
 
-  // Khởi tạo WebSocket message handlers
-  useEffect(() => {
-    const unsubscribe = subscribe((msg: WSMessage) => {
-      switch (msg.type) {
-        case "KEY_DOWN": //
-          handleRemoteKeyDown(msg.payload.key!);
-          break;
-        case "KEY_UP": // arrow down có hành vì khác so với các phím còn lại. case này dành riêng cho arrow down
-          handleRemoteKeyUp(msg.payload.key!);
-          break;
-        case "start":
-          handleGameStart(msg);
-          break;
-      }
-    });
-
-    return () => unsubscribe();
-  }, [subscribe]);
-
   const handleRemoteKeyDown = (key: string) => {
-    const keyMap: Record<string, keyof InputBuffer> = {
-      ArrowLeft: "left",
-      ArrowRight: "right",
-      ArrowUp: "up",
-      ArrowDown: "down",
-      " ": "space",
-      z: "rotateCounterClockwise",
-      c: "hold",
-    };
-
-    const bufferKey = keyMap[key];
-    if (bufferKey) {
-      inputBuffer.current[bufferKey] = true;
-      
-      // Xử lý soft drop
-      if (key === "ArrowDown") {
+    if (key in inputBuffer.current) {
+      inputBuffer.current[key as keyof InputBuffer] = true;
+      console.log(inputBuffer.current[key as keyof InputBuffer])
+      if (key === "down") {
         setTickSpeed(TickSpeedType.SoftDrop);
       }
     }
+    
   };
 
   const handleRemoteKeyUp = (key: string) => {
-    const keyMap: Record<string, keyof InputBuffer> = {
-      ArrowLeft: "left",
-      ArrowRight: "right",
-      ArrowDown: "down",
-    };
-
-    const bufferKey = keyMap[key];
-    if (bufferKey) {
-      inputBuffer.current[bufferKey] = false;
-      
-      // Reset tốc độ khi nhả phím xuống
-      if (key === "ArrowDown") {
+    if (key in inputBuffer.current) {
+      inputBuffer.current[key as keyof InputBuffer] = false;
+      if (key === "down") {
         setTickSpeed(TickSpeedType.DropLevel(level));
       }
     }
@@ -120,12 +79,12 @@ export const useTetrisEventSource = (): {
 
   const handleInputEvent = useCallback(() => {
     const buffer = inputBuffer.current;
-    
+
     if (buffer.left) {
       dispatchBoard({ type: "keyevent", payload: { key: "left" } });
       buffer.left = false;
     }
-    
+
     if (buffer.right) {
       dispatchBoard({ type: "keyevent", payload: { key: "right" } });
       buffer.right = false;
@@ -164,70 +123,144 @@ export const useTetrisEventSource = (): {
     }
   }, [activeBlock, dispatchBoard]);
 
-  // Phần còn lại giữ nguyên như useTetris gốc
   const renderBoard = useCallback(() => {
     const renderedBoard = structuredClone(board) as BoardGrid;
     if (isPlaying && activeBlock) {
-      addBlockToBoard(renderedBoard, dRow, dCol, activeBlock);
+      renderBlockOnBoard(renderedBoard, dRow, dCol, activeBlock);
     }
     return renderedBoard.slice(2, 2 + VISIBLE_HEIGHT);
   }, [board, isPlaying, activeBlock, dRow, dCol]);
 
+  /*
+    HOOKS FLOW:  
+
+  */
+
   const init = useCallback(() => {
-    const generated = generateBlocks_7bag(1000);
-    listBlock.current = generated;
-    sendMessage({
-      type: "init",
-      payload: {
-        listBlock: convertTetrominoToNumArray(generated),
-      },
+    dispatchBoard({
+      type: "start",
+      payload: { listBlock: listBlock.current },
     });
   }, [sendMessage]);
 
-  const startGame = useCallback(() => {
-    setIsPlaying(true);
-    const generated = generateBlocks_7bag(1000);
-    listBlock.current = generated;
-    dispatchBoard({
-      type: "start",
-      payload: { listBlock: generated },
-    });
-  }, [dispatchBoard]);
+  // const startGame = useCallback(() => {
+  //   setIsPlaying(true);
+  //   dispatchBoard({
+  //     type: "start",
+  //     payload: { listBlock: listBlock.current },
+  //   });
+  // }, [dispatchBoard]);
 
+  // commit state
   const commitPosition = useCallback(() => {
-    /* Giữ nguyên như bản gốc */
-  }, [/* Các dependencies gốc */]);
+    if (!activeBlock || !hasCollision(board, activeBlock, dCol, dRow + 1)) {
+      setIsCommitting(false);
+      setTickSpeed(TickSpeedType.DropLevel(0));
+      return;
+    }
+    let cloneBoard = structuredClone(board) as BoardGrid;
+    renderBlockOnBoard(cloneBoard, dRow, dCol, activeBlock);
 
+    setTickSpeed(TickSpeedType.DropLevel(0));
+
+    dispatchBoard({
+      type: "commit",
+      payload: { listBlock: listBlock.current, committedBoard: cloneBoard },
+    });
+
+    checkGameover(cloneBoard);
+    setIsCommitting(false);
+  }, [board, activeBlock, dRow, dCol, nextBlockIndex, holdBlock, dispatchBoard]);
+  //this func catch on message
   const checkGameover = (board: BoardGrid) => {
     /* Giữ nguyên như bản gốc */
   };
-
-  const gameTick = useCallback(() => {
-    /* Giữ nguyên như bản gốc */
-  }, [/* Các dependencies gốc */]);
+  //handle tick speed
+  const handleTickSpeed = useCallback(() => {
+    if (isCommitting) {
+      commitPosition();
+    } else if (activeBlock && hasCollision(board, activeBlock, dCol, dRow + 1)) {
+      setTickSpeed(TickSpeedType.LockDelay);
+      setIsCommitting(true);
+    } else {
+      dispatchBoard({ type: "drop" });
+      //dispatchGameAction({ type: "soft_drop", cells: 1 });
+    }
+  }, [board, activeBlock, dCol, dRow, isCommitting, commitPosition, dispatchBoard]);
 
   const gameLoop = useCallback(
     (timestamp: number) => {
-      /* Giữ nguyên như bản gốc */
+      if (!isPlaying) {
+        animationFrameId.current && cancelAnimationFrame(animationFrameId.current);
+        animationFrameId.current = null;
+        return;
+      }
+
+      const deltaTime = timestamp - lastFrameTime.current;
+      lastFrameTime.current = timestamp;
+      accumulatedTime.current += deltaTime;
+
+      const currentTickSpeed = tickSpeed ?? TickSpeedType.DropLevel(level);
+      if (accumulatedTime.current >= currentTickSpeed) {
+        handleTickSpeed();
+        accumulatedTime.current -= currentTickSpeed;
+      }
+
+      handleInputEvent(); //1 frame ~16ms, thời gian để bấm giữa 2 phím ~40-100ms (1 giây bấm được 10-15 phím) -> mỗi frame chỉ cần kiểm tra input 1 lần
+
+      animationFrameId.current = requestAnimationFrame(gameLoop);
     },
-    [isPlaying, tickSpeed, gameTick, handleInputEvent]
+    [isPlaying, tickSpeed, handleTickSpeed, handleInputEvent]
   );
 
+  //trigger loop khi isPlaying = true
   useEffect(() => {
-    /* Giữ nguyên logic game loop */
+    if (isPlaying && !animationFrameId.current) {
+      lastFrameTime.current = performance.now();
+      accumulatedTime.current = 0;
+      animationFrameId.current = requestAnimationFrame(gameLoop);
+    }
+    return () => {
+      if (animationFrameId.current) {
+        cancelAnimationFrame(animationFrameId.current);
+        animationFrameId.current = null;
+      }
+    };
   }, [isPlaying, gameLoop]);
+  //catch ws message <--> main event listener (thay vì key event như use tetris)
+  useEffect(() => {
+    const unsubscribe = subscribe((msg: WSMessage) => {
+      switch (msg.type) {
+        case "init":
+          if (msg.payload && msg.payload.listBlock) {
+            listBlock.current = convertNumToTetrominoArray(msg.payload.listBlock);
+            init();
+          } else {
+            console.log("init data is missing");
+          }
+          break;
+        case "key_down":
+          
+          handleRemoteKeyDown(msg.payload.key!);
+          break;
+        case "key_up": // arrow down có hành vì khác so với các phím còn lại. case này dành riêng cho arrow down
+          handleRemoteKeyUp(msg.payload.key!);
+          break;
+        case "start":
+          const delay = (msg.payload!.startAt || Date.now()) - msg.payload.timestamp!;
 
-  const handleGameStart = (msg: WSMessage) => {
-    const delay = msg.payload!.startAt || 0;
-    setTimeout(() => {
-      startGame();
-    }, delay);
-  };
+          setTimeout(() => {
+            setIsPlaying(true);
+          }, delay);
+          break;
+      }
+    });
+
+    return () => unsubscribe();
+  }, [subscribe]);
 
   return {
     board: isPlaying ? renderBoard() : createEmptyBoard().slice(2, 2 + VISIBLE_HEIGHT),
-    startGame,
     isPlaying,
-    init,
   };
 };

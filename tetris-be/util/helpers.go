@@ -55,6 +55,7 @@ func JSONDecode(data []byte, v interface{}) {
 	if err != nil {
 		log.Println("Invalid %T value", v)
 	}
+
 }
 
 func RespondWithError(w http.ResponseWriter, statusCode int, message string) {

@@ -31,7 +31,7 @@ export const WebSocketProvider = ({
   useEffect(() => {
     roomId = "123456"; //fixed test
     const url  = API_URL || "" 
-    const wsUrl = url.replace(/^http/, "ws") + `${API_URL}/ws?room=${roomId}?player=${playerId}`;
+    const wsUrl = url.replace(/^http/, "ws") + `/ws?room=${roomId}&player=${playerId}`;
     const ws = new WebSocket(wsUrl);
     setSocket(ws);
     socketRef.current = ws;
@@ -50,6 +50,13 @@ export const WebSocketProvider = ({
        messageHandlersRef.current.forEach((h) => h(msg));
     }
     ws.onmessage = handleMessage;
+    const handleBeforeUnload = () => {
+      if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+        socketRef.current.close(); // Đóng WebSocket
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
     //cleanup function
     return () => {
       ws.onmessage = null;
@@ -57,10 +64,11 @@ export const WebSocketProvider = ({
       socketRef.current = null;
       setSocket(null);
       messageHandlersRef.current.clear();
+      window.removeEventListener('beforeunload', handleBeforeUnload);
     };
   }, [roomId, playerId]);
 
-  const sendMessage = useCallback<SendMessageFn>((msg) => {
+  const sendMessage = useCallback<SendMessageFn>((msg:WSMessage) => {
     if (socketRef.current?.readyState === WebSocket.OPEN) {
       socketRef.current.send(JSON.stringify(msg));
     }

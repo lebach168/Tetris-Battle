@@ -1,10 +1,12 @@
+"use client";
+
 import { useEffect, useState } from "react";
 
 export function useGuestId() {
   const [guestId, setGuestId] = useState<string | null>(null);
 
   useEffect(() => {
-    if (typeof window !== 'undefined') {
+    if (typeof window !== "undefined") {
       let id = sessionStorage.getItem("guest_id");
       if (!id) {
         const characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";

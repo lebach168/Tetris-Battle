@@ -14,7 +14,7 @@ import {
 } from "@/types/tetris";
 import {
   hasCollision,
-  addBlockToBoard,
+  renderBlockOnBoard,
   generateBlocks_7bag,
   GravityCurve,
   rotateLeft,
@@ -36,7 +36,7 @@ export const useTetris = (): {
   board: BoardGrid;
   startGame: () => void;
   isPlaying: boolean;
-  isReady:boolean;
+  isReady: boolean;
 } => {
   const level = 1; //temp
   const [{ board, activeBlock, dRow, dCol, isHoldAvailable, holdBlock, nextBlockIndex }, dispatchBoard] = useBoard();
@@ -61,7 +61,6 @@ export const useTetris = (): {
   const accumulatedTime = useRef<number>(0);
   const animationFrameId = useRef<number | null>(null);
   const listBlock = useRef<TetrominoType[]>([]);
- 
 
   const handleInputEvent = useCallback(() => {
     const buffer = inputBuffer.current;
@@ -109,18 +108,19 @@ export const useTetris = (): {
   const renderBoard = useCallback(() => {
     const renderedBoard = structuredClone(board) as BoardGrid;
     if (isPlaying && activeBlock) {
-      addBlockToBoard(renderedBoard, dRow, dCol, activeBlock); // suspicion
+      renderBlockOnBoard(renderedBoard, dRow, dCol, activeBlock); // suspicion
     }
     return renderedBoard.slice(2, 2 + VISIBLE_HEIGHT);
   }, [board, isPlaying, activeBlock, dRow, dCol]);
 
   /*
-    Game flow  
+    GAME FLOW  
 
   */
   const init = useCallback(() => {
     const generated = generateBlocks_7bag(1000);
     listBlock.current = generated;
+    console.log(convertTetrominoToNumArray(generated));
     // type ở đây là WSmessage
     sendMessage({
       type: "init",
@@ -135,12 +135,12 @@ export const useTetris = (): {
     });
   }, [dispatchBoard, sendMessage]);
 
-   //start game
+  //start game
   const startGame = useCallback(() => {
-    sendMessage({type:"start", payload:{}});
-  },[sendMessage]);
+    sendMessage({ type: "start", payload: {timestamp:Date.now()} });
+  }, [sendMessage]);
 
-  //commit a block
+  //commit a block  --> TODO :handle consistency boardstate 
   const commitPosition = useCallback(() => {
     if (!activeBlock || !hasCollision(board, activeBlock, dCol, dRow + 1)) {
       setIsCommitting(false);
@@ -148,7 +148,7 @@ export const useTetris = (): {
       return;
     }
     let cloneBoard = structuredClone(board) as BoardGrid;
-    addBlockToBoard(cloneBoard, dRow, dCol, activeBlock);
+    renderBlockOnBoard(cloneBoard, dRow, dCol, activeBlock);
 
     setTickSpeed(TickSpeedType.DropLevel(0));
 
@@ -174,7 +174,8 @@ export const useTetris = (): {
       console.log("Game Over!");
     }
   };
-  const gameTick = useCallback(() => {
+  //handle tick speed 
+  const handleTickSpeed = useCallback(() => {
     if (isCommitting) {
       commitPosition();
     } else if (activeBlock && hasCollision(board, activeBlock, dCol, dRow + 1)) {
@@ -187,7 +188,8 @@ export const useTetris = (): {
   }, [board, activeBlock, dCol, dRow, isCommitting, commitPosition, dispatchBoard]);
 
   //game loop
-  const gameLoop = useCallback((timestamp: number) => {
+  const gameLoop = useCallback(
+    (timestamp: number) => {
       if (!isPlaying) {
         animationFrameId.current && cancelAnimationFrame(animationFrameId.current);
         animationFrameId.current = null;
@@ -200,7 +202,7 @@ export const useTetris = (): {
 
       const currentTickSpeed = tickSpeed ?? TickSpeedType.DropLevel(level);
       if (accumulatedTime.current >= currentTickSpeed) {
-        gameTick();
+        handleTickSpeed();
         accumulatedTime.current -= currentTickSpeed;
       }
 
@@ -208,9 +210,9 @@ export const useTetris = (): {
 
       animationFrameId.current = requestAnimationFrame(gameLoop);
     },
-    [isPlaying, tickSpeed, gameTick, handleInputEvent]
+    [isPlaying, tickSpeed, handleTickSpeed, handleInputEvent]
   );
-
+  //trigger loop khi isPlaying = true
   useEffect(() => {
     if (isPlaying && !animationFrameId.current) {
       lastFrameTime.current = performance.now();
@@ -231,19 +233,23 @@ export const useTetris = (): {
         case "ready":
           setIsReady(true);
           init();
+          break;
         case "unready":
           setIsReady(false);
+          break;
         case "start":
-          const delay = msg.payload!.startAt || Date.now() - Date.now(); // server gửi millisec
+          console.log(msg)
+          const delay = (msg.payload!.startAt || Date.now()) - Date.now(); // server gửi millisec
           console.log(`[SYNC] Will start in ${delay}ms`);
           setTimeout(() => {
             setIsPlaying(true);
           }, delay);
+          break;
         default:
       }
     });
     return unsub; //cleanup callback unsubcribe wsmessage listener
-  }, [subscribe,init]);
+  }, [subscribe, init, isReady]);
 
   //hande event listener
   useEffect(() => {
@@ -262,15 +268,48 @@ export const useTetris = (): {
       if (event.key === "ArrowUp" || event.key === "x") inputBuffer.current.up = true;
       if (event.key === "z") inputBuffer.current.rotateCounterClockwise = true;
       if (event.key === "c") inputBuffer.current.hold = true;
+      Object.keys(inputBuffer.current).forEach((key)=>{
+        if(inputBuffer.current && inputBuffer.current[key as keyof InputBuffer]){
+          sendMessage({
+            type:"key_down",
+            payload:{
+              key
+            }
+          })
+        }
+      })
     };
 
     const handleKeyUp = (event: KeyboardEvent) => {
       if (event.key === "ArrowDown") {
-        inputBuffer.current.down = false;
+        sendMessage({
+            type:"key_up",
+            payload:{
+              key:"down"
+            }
+          })
+          inputBuffer.current.down = false;
         setTickSpeed(TickSpeedType.DropLevel(level));
       }
-      if (event.key === "ArrowLeft") inputBuffer.current.left = false;
-      if (event.key === "ArrowRight") inputBuffer.current.right = false;
+      if (event.key === "ArrowLeft") {
+         sendMessage({
+            type:"key_up",
+            payload:{
+              key:"left"
+            }
+          })
+        inputBuffer.current.left = false;
+      }
+
+      if (event.key === "ArrowRight") {
+         sendMessage({
+            type:"key_up",
+            payload:{
+              key:"right"
+            }
+          })
+        inputBuffer.current.right = false;
+      }
     };
 
     document.addEventListener("keydown", handleKeyDown);
@@ -295,6 +334,5 @@ export const useTetris = (): {
     startGame,
     isPlaying,
     isReady,
-
   };
 };

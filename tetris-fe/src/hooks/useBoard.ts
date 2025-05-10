@@ -1,6 +1,14 @@
 "use client";
 
-import { addBlockToBoard, clearLines, createEmptyBoard, findLandingPosition, getWallKickData, hasCollision, rotateRight } from "@/lib/gamelogic";
+import {
+  renderBlockOnBoard,
+  clearLines,
+  createEmptyBoard,
+  findLandingPosition,
+  getWallKickData,
+  hasCollision,
+  rotateRight,
+} from "@/lib/gamelogic";
 
 import {
   TetrominoType,
@@ -28,14 +36,13 @@ type BoardState = {
   isHoldAvailable: boolean;
   holdBlock?: Block; //original shape form
   nextBlockIndex: number;
-  
 };
 type BoardAction = {
   type: "start" | "drop" | "commit" | "keyevent" | "end";
   payload?: {
     listBlock?: TetrominoType[];
     key?: string;
-    
+
     committedBoard?: BoardGrid;
     rotatedBlock?: Block;
   };
@@ -68,11 +75,10 @@ const boardReducer = (state: BoardState, action: BoardAction): BoardState => {
       }
 
       //check if special clear ( t spin, perfect , back to back ...)
-      
+
       //clear line
-      if(completedLines.length>0){
-         clearedBoard = clearLines(committedBoard, completedLines);
-        
+      if (completedLines.length > 0) {
+        clearedBoard = clearLines(committedBoard, completedLines);
       }
       // continue with next block
       blockType = action.payload!.listBlock![boardState.nextBlockIndex];
@@ -81,7 +87,7 @@ const boardReducer = (state: BoardState, action: BoardAction): BoardState => {
         shape: TETROMINO_SHAPES[blockType],
         rState: 0 as RotationState,
       };
-      boardState.board = clearedBoard?clearedBoard:committedBoard;
+      boardState.board = clearedBoard ? clearedBoard : committedBoard;
       boardState.nextBlockIndex++;
       boardState.isHoldAvailable = true;
       boardState.dRow = 0;
@@ -116,8 +122,8 @@ const boardReducer = (state: BoardState, action: BoardAction): BoardState => {
             const newDRow = boardState.dRow + dy;
             if (!hasCollision(boardState.board, rotatedBlock, newDCol, newDRow)) {
               console.log(`Applying wall kick: dx=${dx}, dy=${dy}`); // Debug
-              boardState.dCol=newDCol;
-              boardState.dRow =newDRow;
+              boardState.dCol = newDCol;
+              boardState.dRow = newDRow;
               boardState.activeBlock = rotatedBlock;
               return boardState;
             }
@@ -177,7 +183,6 @@ export const useBoard = (): [boardState: BoardState, dispatchBoard: React.Dispat
     isHoldAvailable: true,
     holdBlock: undefined,
     nextBlockIndex: 0,
-
   });
 
   return [boardState, dispatchBoard];

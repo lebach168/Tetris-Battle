@@ -1,7 +1,8 @@
+"use client";
 //import type { Metadata } from "next";
 import "./globals.css";
 
-import { ReactNode, useEffect } from "react";
+import { ReactNode } from "react";
 import Navbar from "@/components/Navbar";
 import { useGuestId } from "@/hooks/useGuestId";
 //import '@/styles/globals.css';

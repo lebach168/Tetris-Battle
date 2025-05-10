@@ -12,10 +12,11 @@ export interface InputBuffer {
 
 export type WSMessage = {
   type: string;
-  to?: string; //might use in future
+  //to?: string; //might use in future
   payload: {
-    listBlock?: number[] | Uint8Array;//opponent blocks
+    listBlock?: number[] ;//opponent blocks
     startAt?: number;//millisecond from UNIX Epoch
     key?:string;
+    timestamp?: number;
   };
 };

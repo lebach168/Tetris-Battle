@@ -13,8 +13,8 @@ import (
 )
 
 type WSMessage struct {
-	Type    string          `json:"type"`    // e.g. "key", "checksum", etc.
-	To      string          `json:"to"`      // receiver : all |  player1ID | player2ID
+	Type string `json:"type"` // e.g. "key", "checksum", etc.
+	//To      string          `json:"to"`      // receiver : all |  player1ID | player2ID
 	Payload json.RawMessage `json:"payload"` //
 }
 type KeyPayload struct {
@@ -37,7 +37,11 @@ type GameOverPayload struct {
 	From string `json:"clientID"`
 }
 type StartPayload struct {
-	StartAt int64 `json:"startAt"` // timestamp để tất cả bắt đầu đồng bộ
+	Timestamp int64 `json:"timestamp"`
+	StartAt   int64 `json:"startAt"` // thời gian để tất cả bắt đầu đồng bộ
+}
+type StartReceiveMsgPayload struct {
+	Timestamp int64 `json:"timestamp"`
 }
 type InitPayload struct {
 	ListBlock []int `json:"listBlock"`
@@ -85,15 +89,12 @@ func WebSocketHandler(w http.ResponseWriter, r *http.Request) {
 		quit:   make(chan struct{}),
 	}
 
-	roomClientsMu.Lock()
-	roomClients[roomID] = append(roomClients[roomID], client)
-	roomClientsMu.Unlock()
-
+	registerClient(client)
 	if len(roomClients[roomID]) == 2 {
 		msg := []byte(`{"type":"ready","payload":{}}`)
 		broadcastToAll(roomID, msg)
 	}
-
+	fmt.Printf("Player %s joined room %s (clients: %d)\n", playerId, roomID, len(roomClients[roomID]))
 	defer client.cleanup()
 
 	//catch end broadcast message
@@ -104,51 +105,83 @@ func WebSocketHandler(w http.ResponseWriter, r *http.Request) {
 	// 			 messageSender <-- channel Send <-- Broadcast<--messageHandler
 
 	//cleanup function
-
+	go client.messageReceiver()
+	go client.messageSender()
 	<-client.quit //channel bắt tín hiệu dừng connection
 }
+func registerClient(c *Client) {
+	roomClientsMu.Lock()
+	defer roomClientsMu.Unlock()
 
-func handleWSMessage(sender *Client, message []byte) {
+	clients := roomClients[c.RoomID]
+	for i, old := range clients {
+		if old.ID == c.ID {
+			// replace old client
+			old.cleanup()
+			clients[i] = c
+			roomClients[c.RoomID] = clients
+			log.Printf("Replaced client %s in room %s", c.ID, c.RoomID)
+			return
+		}
+	}
+
+	// append if not found
+	roomClients[c.RoomID] = append(clients, c)
+	log.Printf("Added client %s to room %s (now %d)", c.ID, c.RoomID, len(roomClients[c.RoomID]))
+}
+
+func handleWSMessage(sender *Client, rawMessage []byte) {
 	var wsMsg WSMessage
-	util.JSONDecode(message, wsMsg)
+	util.JSONDecode(rawMessage, &wsMsg)
 
 	switch wsMsg.Type {
 	case "init":
 		//FE send init mỗi mỗi khi nhận được msg ready.
-		broadcastToOthers(sender, message)
+		broadcastToOthers(sender, rawMessage)
 		//FE bắt init ở bên useTetrisEventSource
-	case "key":
 
-		broadcastToOthers(sender, message)
+	case "key_down":
+
+		broadcastToOthers(sender, rawMessage)
+
+	case "key_up":
+
+		broadcastToOthers(sender, rawMessage)
+
 	//TODO
 	// case "checksum":
 	//     var payload ChecksumPayload
 	//     // Xóa roomId khỏi struct ChecksumPayload
-	//     broadcastToOthers(sender, message)
+	//     broadcastToOthers(sender, rawMessage)
 
 	// case "sync_board":
 	// 	// full state sync
-	// 	broadcastToOthers(sender, sender.RoomID, message)
+	// 	broadcastToOthers(sender, sender.RoomID, rawMessage)
 
 	case "sent_garbage":
-		broadcastToOthers(sender, message)
+		broadcastToOthers(sender, rawMessage)
 
 	case "game_over":
-		broadcastToAll(sender.RoomID, message)
+		broadcastToAll(sender.RoomID, rawMessage)
 
 	case "start":
+		var ts StartReceiveMsgPayload
+		util.JSONDecode(wsMsg.Payload, &ts)
 		payload := StartPayload{
-			StartAt: (time.Now().UnixNano() + 2000) / int64(time.Millisecond),
+			Timestamp: ts.Timestamp,
+			StartAt:   time.Now().Add(2 * time.Second).UnixMilli(),
 		}
 		msg := util.JSONEncode(map[string]interface{}{
 			"type":    "start",
 			"payload": payload,
 		})
+
 		broadcastToAll(sender.RoomID, msg)
 	case "out_room":
+		log.Println("out room here")
 		close(sender.quit)
 	default:
-		log.Println("Unknown message type:", wsMsg.Type)
+		log.Println("Unknown rawMessage type:", wsMsg.Type)
 	}
 }
 
@@ -168,6 +201,9 @@ func (c *Client) messageSender() {
 	for {
 		select {
 		case message, ok := <-c.Send:
+			if c.Conn == nil {
+				return
+			}
 			if !ok {
 				c.Conn.WriteMessage(websocket.CloseMessage, []byte{})
 				return
@@ -203,13 +239,18 @@ func broadcastToAll(roomId string, msg []byte) {
 }
 func (c *Client) cleanup() {
 	c.once.Do(func() {
+		log.Printf("[DISCONNECT] Client %s left room %s\n", c.ID, c.RoomID)
 		if c.Conn != nil {
 			c.Conn.WriteMessage(websocket.CloseMessage, []byte{})
 			c.Conn.Close()
 			c.Conn = nil
 		}
-		close(c.Send)
-		close(c.quit)
+		if c.Send != nil {
+			close(c.Send)
+		}
+		if c.quit != nil {
+			close(c.quit)
+		}
 		roomClientsMu.Lock()
 		defer roomClientsMu.Unlock()
 		if clients, ok := roomClients[c.RoomID]; ok {
@@ -221,10 +262,12 @@ func (c *Client) cleanup() {
 			}
 			if len(roomClients[c.RoomID]) < 2 {
 				msg := []byte(`{"type":"unready","payload":{}}`)
+				log.Printf("[ROOM STATUS] Room %s now has %d players\n", c.RoomID, len(roomClients[c.RoomID]))
 				broadcastToAll(c.RoomID, msg)
 			}
 			if len(roomClients[c.RoomID]) == 0 {
 				delete(roomClients, c.RoomID)
+				log.Printf("[ROOM CLOSED] Room %s deleted (no players left)\n", c.RoomID)
 				//DeleteRoom(roomID)
 			}
 		}
