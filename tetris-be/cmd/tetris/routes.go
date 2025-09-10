@@ -15,8 +15,9 @@ func addRoutes(
 
 	mux.HandleFunc("GET /healthcheck", healthcheck)
 
+	mux.Handle("GET /rooms", getAllRoomsHandler(roomsStore))
 	mux.Handle("POST /rooms", createRoomHandler(roomsStore))
-	//mux.HandleFunc("POST /rooms/{roomID}", joinRoomHandler)
+	mux.Handle("POST /rooms/{roomID}", joinRoomHandler(roomsStore))
 
 	return mux
 }

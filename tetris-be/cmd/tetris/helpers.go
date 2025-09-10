@@ -45,8 +45,6 @@ func getIntEnv(key string, defaultVal int) int {
 	return num
 }
 
-type envelope map[string]interface{}
-
 func healthcheck(w http.ResponseWriter, r *http.Request) {
 	data := envelope{
 		"status": "available",
@@ -155,3 +153,5 @@ func generateID(n int) (string, error) {
 	}
 	return string(b), nil
 }
+
+type envelope map[string]interface{}
