@@ -3,82 +3,72 @@ package main
 import (
 	"fmt"
 	"net/http"
-	"tetris-be/internal/model"
-	"tetris-be/internal/store/room"
+	"tetris-be/internal/data"
 	"tetris-be/internal/validator"
 )
 
 type input struct {
 	PlayerID string
+	Key      string
 }
 
-func getAllRoomsHandler(roomStore store.RoomsStore) http.Handler {
+func getAllRoomsHandler(roomManager data.RoomManager) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var rooms []*model.Room
-		rooms, err := roomStore.GetAll()
+		data, err := roomManager.GetAll()
 		if err != nil {
 			serverErrorResponse(w, r, err)
 			return
 		}
-		result := envelope{"rooms": rooms}
-		encode(w, http.StatusOK, result, nil)
+		encode(w, http.StatusOK, envelope{"rooms": data}, nil)
 	})
 }
 
-func createRoomHandler(roomsStore store.RoomsStore) http.Handler {
+func joinRoomHandler(roomManager data.RoomManager) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		//read param
+		roomID := readString(r.URL.Query(), "roomid", "")
+		//read body
 		in, err := decode[input](r)
 		if err != nil {
-			errorResponse(w, r, http.StatusBadRequest, "invalid JSON")
+			serverErrorResponse(w, r, err)
 			return
 		}
 
 		v := validator.New()
-		v.Check(in.PlayerID != "", "playerID", "playerID must be provided")
-		v.Check(len(in.PlayerID) <= 15, "playerID", "invalid request body")
+		ValidateInput(v, in)
 
 		if !v.Valid() {
-			badRequestResponse(w, r, fmt.Errorf("invalid request"))
+			failedValidationResponse(w, r, v.Errors)
 			return
-		}
-		var roomID string
-		var room *model.Room
-		maxRetries := 10
-		for i := 0; i < maxRetries; i++ {
-			roomID, err = generateID(5)
-			room, err = roomsStore.CreateRoom(roomID, in.PlayerID)
-			if err == nil {
-				break
-			}
 		}
 
-		if err != nil {
-			serverErrorResponse(w, r, fmt.Errorf("failed to create room after %d attempts: %v", maxRetries, err))
-			return
+		//call service - join or create
+		var data data.RoomDTO
+		switch roomID {
+		case "":
+			data, err = roomManager.CreateRoom(in.Key)
+		default:
+			data, err = roomManager.JoinRoom(roomID, in.Key)
 		}
-		wsURL := fmt.Sprintf("ws://match/?roomid=%s&key=%s", room.ID, room.Key)
-		encode(w, http.StatusCreated, envelope{"room": room, "ws_url": wsURL}, nil)
-	})
-}
-func joinRoomHandler(roomsStore store.RoomsStore) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		in, err := decode[input](r)
+		//catch error
 		if err != nil {
-			errorResponse(w, r, http.StatusBadRequest, "invalid JSON")
-			return
-		}
-		roomID := r.PathValue("roomID")
-		room, err := roomsStore.JoinRoom(roomID, in.PlayerID)
-		if err != nil {
-			if err.Error() == "room does not exists" || err.Error() == "room is full" || err.Error() == "player already joined" {
-				errorResponse(w, r, http.StatusConflict, err.Error())
-			} else {
+			switch {
+			case err.Error() == "not found":
+				notFoundResponse(w, r)
+			case err.Error() == "room is full":
+				conflictResponse(w, r)
+			default:
 				serverErrorResponse(w, r, err)
 			}
-			return
 		}
-
-		wsURL := fmt.Sprintf("ws://match/?roomid=%s&key=%s", room.ID, room.Key)
-		encode(w, http.StatusAccepted, envelope{"room": room, "ws_url": wsURL}, nil)
+		//send response { wsurl:...,room:...}
+		wsURL := fmt.Sprintf("ws://match?roomid=%s&playerid=%s", data.ID, in.PlayerID)
+		encode(w, http.StatusAccepted, envelope{"room": data, "ws_url": wsURL}, nil)
 	})
+}
+
+func ValidateInput(v *validator.Validator, in input) {
+	v.Check(in.PlayerID != "", "playerID", "playerID must be provided")
+	v.Check(len(in.PlayerID) <= 15, "playerID", "invalid request body")
+	v.Check(len(in.Key) <= 7, "key", "wrong key")
 }

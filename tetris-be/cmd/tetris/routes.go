@@ -3,21 +3,23 @@ package main
 import (
 	"log/slog"
 	"net/http"
-	"tetris-be/internal/store/room"
+	"tetris-be/internal/data"
 )
 
 func addRoutes(
 	mux *http.ServeMux,
 	logger *slog.Logger,
 	config *Config,
-	roomsStore store.RoomsStore,
+	roomManager data.RoomManager,
 ) http.Handler {
 
 	mux.HandleFunc("GET /healthcheck", healthcheck)
 
-	mux.Handle("GET /rooms", getAllRoomsHandler(roomsStore))
-	mux.Handle("POST /rooms", createRoomHandler(roomsStore))
-	mux.Handle("POST /rooms/{roomID}", joinRoomHandler(roomsStore))
+	//rooms?roomid=... to join an existing room. If the parameter is missing, a new room will be created
+	mux.Handle("GET /rooms", getAllRoomsHandler(roomManager))
+	mux.Handle("POST /rooms", joinRoomHandler(roomManager))
+
+	//mux.Handle("GET /ws/match",serveWs)
 
 	return mux
 }

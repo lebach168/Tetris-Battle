@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"sync"
 	"syscall"
-	store "tetris-be/internal/store/room"
+	"tetris-be/internal/data"
 	"time"
 
 	"net/http"
@@ -57,9 +57,9 @@ type Config struct {
 	port int
 }
 
-func NewServerHandler(logger *slog.Logger, cfg *Config, roomStore store.RoomsStore) http.Handler {
+func NewServerHandler(logger *slog.Logger, cfg *Config, roomManager data.RoomManager) http.Handler {
 	mux := http.NewServeMux()
-	addRoutes(mux, logger, cfg, roomStore)
+	addRoutes(mux, logger, cfg, roomManager)
 
 	return mux
 }
