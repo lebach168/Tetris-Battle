@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"reflect"
+	"strings"
 	"testing"
 	"tetris-be/internal/data"
 )
@@ -28,13 +29,14 @@ func TestGetRooms(t *testing.T) {
 		}
 		err := json.NewDecoder(response.Body).Decode(&responseBody)
 		assertNoError(t, err)
-		expectedRooms, _ := stubRoomManager.GetAll()
+		expectedRooms, _ := stubRoomManager.GetAllDTO()
 		assertRooms(t, expectedRooms, responseBody.Rooms)
 	})
 }
 func TestJoinRoom(t *testing.T) {
 	stubRoomManager := newStubRoomManager()
-	server := NewServerHandler(nil, nil, stubRoomManager)
+	cfg := LoadConfig()
+	server := NewServerHandler(nil, cfg, stubRoomManager)
 	t.Run("join room happy case", func(t *testing.T) {
 		in := struct {
 			PlayerID string
@@ -157,19 +159,19 @@ func newStubRoomManager() *data.InMemoryRoomManager {
 }
 func newCreateRoomRequest(data interface{}) *http.Request {
 	body, _ := json.Marshal(data)
-	req, _ := http.NewRequest(http.MethodPost, "/rooms", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/rooms", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	return req
 }
 
 func newGetRoomsRequest() *http.Request {
-	req, _ := http.NewRequest(http.MethodGet, "/rooms", nil)
+	req := httptest.NewRequest(http.MethodGet, "/rooms", nil)
 	return req
 }
 
 func newJoinRoomRequest(data interface{}, roomID string) *http.Request {
 	body, _ := json.Marshal(data)
-	req, _ := http.NewRequest(http.MethodPost, fmt.Sprintf("/rooms?roomid=%s", roomID), bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/rooms?roomid=%s", roomID), bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	return req
 }
@@ -225,7 +227,7 @@ func assertRooms(t testing.TB, want, got []data.RoomDTO) {
 	if len(got) != len(want) {
 		t.Errorf("got %v want %v", got, want)
 	}
-	
+
 }
 func assertRoom(t testing.TB, want, got data.RoomDTO) {
 	t.Helper()
@@ -250,8 +252,9 @@ func assertWsURL(t testing.TB, got string) {
 	q := u.Query()
 	roomID := q.Get("roomid")
 	playerID := q.Get("playerid")
-	if len(roomID) < 5 || len(playerID) < 5 {
-		t.Errorf("got %s, but want ws://ws/match?roomid=.....&playerid=.....", got)
+
+	if !strings.HasPrefix(got, "ws://") || len(roomID) < 5 || len(playerID) < 5 {
+		t.Errorf("got %s, but want ws://host/ws/match?roomid=.....&playerid=.....", got)
 	}
 }
 func assertContentType(t testing.TB, want string, got string) {

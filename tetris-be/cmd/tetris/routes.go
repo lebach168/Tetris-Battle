@@ -17,9 +17,9 @@ func addRoutes(
 
 	//rooms?roomid=... to join an existing room. If the parameter is missing, a new room will be created
 	mux.Handle("GET /rooms", getAllRoomsHandler(roomManager))
-	mux.Handle("POST /rooms", joinRoomHandler(roomManager))
+	mux.Handle("POST /rooms", joinRoomHandler(config, roomManager))
 
-	//mux.Handle("GET /ws/match",serveWs)
+	mux.Handle("GET /ws/match", serveWs(roomManager))
 
 	return mux
 }

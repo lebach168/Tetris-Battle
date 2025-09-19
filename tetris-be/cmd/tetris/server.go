@@ -21,8 +21,9 @@ func run(ctx context.Context) error {
 	ctx, cancel := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM|syscall.SIGINT)
 	defer cancel()
 
-	serverHandler := NewServerHandler(logger, nil, nil)
 	cfg := LoadConfig()
+	serverHandler := NewServerHandler(logger, cfg, nil)
+
 	//v1 := http.NewServeMux()
 	//v1.Handle("/v1/", http.StripPrefix("/v1", mux))
 	httpServer := http.Server{
@@ -57,9 +58,10 @@ type Config struct {
 	port int
 }
 
-func NewServerHandler(logger *slog.Logger, cfg *Config, roomManager data.RoomManager) http.Handler {
+func NewServerHandler(logger *slog.Logger, config *Config, roomManager data.RoomManager) http.Handler {
 	mux := http.NewServeMux()
-	addRoutes(mux, logger, cfg, roomManager)
+
+	addRoutes(mux, logger, config, roomManager)
 
 	return mux
 }

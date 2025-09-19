@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"github.com/joho/godotenv"
+
 	"log"
 	"math/big"
 	"net/http"
@@ -21,11 +22,15 @@ const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
 func LoadConfig() *Config {
 	var envPath string
-	flag.StringVar(&envPath, "env", ".env.local", "Path to .env file")
+
+	flag.StringVar(&envPath, "env", "../../.env.local", "Path to .env file")
+	flag.Parse()
+
 	if err := godotenv.Load(envPath); err != nil {
 		log.Fatalf("Error loading env file: %s", envPath)
 		return nil
 	}
+
 	var cfg Config
 	cfg.port = getIntEnv("PORT", 8080)
 

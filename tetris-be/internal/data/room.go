@@ -13,16 +13,19 @@ type Room struct {
 	Players   map[*PlayerConn]bool
 	join      chan *PlayerConn
 	leave     chan *PlayerConn
-	broadcast chan Message
-	stop      chan struct{}
+	broadcast chan Packet
+
+	stop          chan struct{}
+	callbackClose func()
 }
 
-type Message struct {
-	exclude string
-	body    []byte
+type Packet struct {
+	excludeID string
+	body      []byte
 }
 
-func (r *Room) start() {
+func (r *Room) listenAndServe() {
+	defer r.callbackClose()
 	for {
 		select {
 		case player := <-r.join:
@@ -37,7 +40,7 @@ func (r *Room) start() {
 			}
 		case msg := <-r.broadcast:
 			for p := range r.Players {
-				if p.ID == msg.exclude {
+				if p.ID == msg.excludeID {
 					continue
 				}
 				select {
@@ -54,7 +57,7 @@ func (r *Room) start() {
 	}
 }
 
-func generateID(n int) (string, error) {
+func GenerateID(n int) (string, error) {
 	b := make([]byte, n)
 	for i := range b {
 		num, err := rand.Int(rand.Reader, big.NewInt(int64(len(letters))))
@@ -65,14 +68,15 @@ func generateID(n int) (string, error) {
 	}
 	return string(b), nil
 }
-func NewRoom(roomID, key string) *Room {
+func NewRoom(roomID, key string, close func()) *Room {
 	return &Room{
-		ID:        roomID,
-		Key:       key,
-		Players:   make(map[*PlayerConn]bool),
-		join:      make(chan *PlayerConn),
-		leave:     make(chan *PlayerConn),
-		broadcast: make(chan Message, 32),
-		stop:      make(chan struct{}),
+		ID:            roomID,
+		Key:           key,
+		Players:       make(map[*PlayerConn]bool),
+		join:          make(chan *PlayerConn),
+		leave:         make(chan *PlayerConn),
+		broadcast:     make(chan Packet, 32),
+		stop:          make(chan struct{}),
+		callbackClose: close,
 	}
 }

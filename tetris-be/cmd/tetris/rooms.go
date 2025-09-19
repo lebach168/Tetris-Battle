@@ -14,7 +14,7 @@ type input struct {
 
 func getAllRoomsHandler(roomManager data.RoomManager) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		data, err := roomManager.GetAll()
+		data, err := roomManager.GetAllDTO()
 		if err != nil {
 			serverErrorResponse(w, r, err)
 			return
@@ -23,7 +23,7 @@ func getAllRoomsHandler(roomManager data.RoomManager) http.Handler {
 	})
 }
 
-func joinRoomHandler(roomManager data.RoomManager) http.Handler {
+func joinRoomHandler(cfg *Config, roomManager data.RoomManager) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		//read param
 		roomID := readString(r.URL.Query(), "roomid", "")
@@ -62,7 +62,8 @@ func joinRoomHandler(roomManager data.RoomManager) http.Handler {
 			}
 		}
 		//send response { wsurl:...,room:...}
-		wsURL := fmt.Sprintf("ws://match?roomid=%s&playerid=%s", data.ID, in.PlayerID)
+		host := fmt.Sprintf("%s:%d", cfg.host, cfg.port)
+		wsURL := fmt.Sprintf("ws://%s/ws/match?roomid=%s&playerid=%s", host, data.ID, in.PlayerID)
 		encode(w, http.StatusAccepted, envelope{"room": data, "ws_url": wsURL}, nil)
 	})
 }
