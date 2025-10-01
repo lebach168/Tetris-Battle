@@ -6,7 +6,12 @@ import {
   TickSpeed,
   VISIBLE_HEIGHT,
 } from '@/types/tetris';
-import { applyBlockOnBoard, createEmptyBoard, hasCollision } from '@/utils/gamelogic';
+import {
+  applyBlockOnBoard,
+  createEmptyBoard,
+  findLandingPosition,
+  hasCollision,
+} from '@/utils/gamelogic';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { type BoardState, useGameBoard } from '@/hooks/useGameBoard.ts';
 import type { InputBuffer } from '@/types/common.ts';
@@ -18,7 +23,9 @@ export function useTetrisBattle(): {
   isReady: boolean;
 } {
   //game state
+  // @ts-ignore
   const [level, setLevel] = useState(0);
+  // @ts-ignore
   const [isReady, setIsReady] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [tickSpeed, setTickSpeed] = useState<number | null>(TickSpeed.DropLevel(level));
@@ -53,12 +60,13 @@ export function useTetrisBattle(): {
     dispatchAction({ type: 'start' });
     setIsPlaying(true);
   }, []);
-  const checkGameover = (boardState: BoardState) => {
+  const checkGameover = () => {
+    const boardState = gameStateRef.current.boardState;
     const nextBlockType: Tetromino = boardState.listBlock![boardState.nextBlockIndex];
     const nextBlock = nextBlockType
       ? { type: nextBlockType, shape: TETROMINO_SHAPES[nextBlockType], rState: 0 as RotationState }
       : undefined;
-    if (nextBlock && hasCollision(boardState.board, nextBlock, 4, 0)) {
+    if (nextBlock && hasCollision(boardState.board, nextBlock, 0, 4)) {
       dispatchAction({ type: 'end' });
       setIsPlaying(false);
       setTickSpeed(null);
@@ -112,20 +120,31 @@ export function useTetrisBattle(): {
   function commitPosition() {
     //Check if the block is no longer has collision
     const curBoard = gameStateRef.current.boardState;
-    if (
-      curBoard.activeBlock &&
-      !hasCollision(curBoard.board, curBoard.activeBlock, curBoard.cRow + 1, curBoard.cCol)
-    ) {
-      setIsCommitting(false);
-      return;
+    if (curBoard.activeBlock) {
+      const landingRow = findLandingPosition(
+        curBoard.board,
+        curBoard.activeBlock,
+        curBoard.cRow,
+        curBoard.cCol,
+      );
+      // If no longer grounded, cancel lock
+      if (
+        curBoard.cRow < landingRow ||
+        !hasCollision(curBoard.board, curBoard.activeBlock, curBoard.cRow + 1, curBoard.cCol)
+      ) {
+        setIsCommitting(false);
+        setTickSpeed(TickSpeed.DropLevel(gameStateRef.current.level));
+        return;
+      }
     }
 
     const copyBoard = structuredClone(curBoard.board);
+    // Place at current position per SRS lock behavior
     applyBlockOnBoard(copyBoard, curBoard.cRow, curBoard.cCol, curBoard.activeBlock!);
 
     dispatchAction({ type: 'commit', payload: { committedBoard: copyBoard } });
-
-    setTickSpeed(TickSpeed.DropLevel(gameStateRef.current.level));
+    //check gameover logic here!!
+    checkGameover();
     setIsCommitting(false);
   }
 
@@ -134,16 +153,27 @@ export function useTetrisBattle(): {
     const curBoard = gameStateRef.current.boardState;
     if (gameStateRef.current.isCommitting) {
       commitPosition();
-    } else if (
-      curBoard.activeBlock &&
-      hasCollision(curBoard.board, curBoard.activeBlock, curBoard.cRow + 1, curBoard.cCol)
-    ) {
-      setTickSpeed(TickSpeed.LockDelay);
-      setIsCommitting(true);
-    } else {
-      dispatchAction({ type: 'drop' });
-      //dispatchAction({ type: "soft_drop", cells: 1 });
+      return;
     }
+
+    if (curBoard.activeBlock) {
+      const landingRow = findLandingPosition(
+        curBoard.board,
+        curBoard.activeBlock,
+        curBoard.cRow,
+        curBoard.cCol,
+      );
+
+      // Only start lock delay when the piece is truly grounded at its landing row
+      if (curBoard.cRow >= landingRow) {
+        setTickSpeed(TickSpeed.LockDelay);
+        setIsCommitting(true);
+        return;
+      }
+    }
+
+    dispatchAction({ type: 'drop' });
+    //dispatchAction({ type: "soft_drop", cells: 1 });
   }, []);
 
   const handleInputEvent = () => {
@@ -168,7 +198,10 @@ export function useTetrisBattle(): {
       inputBuffer.current.rotateCounterClockwise = false;
     }
     if (inputBuffer.current.space) {
+      // Move to landing position first
       dispatchAction({ type: 'key_event', payload: { key: 'space' } });
+      // Immediately start lock and commit sequence
+      setIsCommitting(true);
       inputBuffer.current.space = false;
     }
     if (inputBuffer.current.hold) {

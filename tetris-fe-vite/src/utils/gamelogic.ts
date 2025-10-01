@@ -87,15 +87,17 @@ export const hasCollision = (board: BoardGrid, block: Block, cRow: number, cCol:
     .filter((row) => row.some((isSet) => isSet))
     .forEach((row, rowIndex) => {
       row.forEach((cell, colIndex) => {
-        if (cell) {
-          if (
-            colIndex + cCol >= BOARD_WIDTH ||
-            colIndex + cCol < 0 ||
-            rowIndex + cRow >= BOARD_HEIGHT ||
-            board[rowIndex + cRow][colIndex + cCol].value !== 0
-          ) {
-            isCollision = true;
-          }
+        if (!cell) return;
+        const targetRow = rowIndex + cRow;
+        const targetCol = colIndex + cCol;
+        if (
+          targetCol >= BOARD_WIDTH ||
+          targetCol < 0 ||
+          targetRow >= BOARD_HEIGHT ||
+          targetRow < 0 ||
+          board[targetRow][targetCol].value !== 0
+        ) {
+          isCollision = true;
         }
       });
     });
@@ -136,7 +138,12 @@ export const applyBlockOnBoard = (board: BoardGrid, cRow: number, cCol: number, 
           if (cell) {
             const ghostRow = landingRow + rowIndex;
             const ghostCol = cCol + colIndex;
-            if (ghostRow < BOARD_HEIGHT && ghostCol < BOARD_WIDTH) {
+            if (
+              ghostRow >= 0 &&
+              ghostRow < BOARD_HEIGHT &&
+              ghostCol >= 0 &&
+              ghostCol < BOARD_WIDTH
+            ) {
               board[ghostRow][ghostCol] = { value: 0, type: 'ghost' };
             }
           }
@@ -151,7 +158,12 @@ export const applyBlockOnBoard = (board: BoardGrid, cRow: number, cCol: number, 
         if (cell) {
           const currentRow = cRow + rowIndex;
           const currentCol = cCol + colIndex;
-          if (currentRow < BOARD_HEIGHT && currentCol < BOARD_WIDTH) {
+          if (
+            currentRow >= 0 &&
+            currentRow < BOARD_HEIGHT &&
+            currentCol >= 0 &&
+            currentCol < BOARD_WIDTH
+          ) {
             board[currentRow][currentCol] = { value: 1, type: cell.toString() };
           }
         }

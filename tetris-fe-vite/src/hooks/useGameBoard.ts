@@ -9,6 +9,7 @@ import {
 } from '@/types/tetris';
 import { type Dispatch, useReducer } from 'react';
 import {
+  applyBlockOnBoard,
   clearLines,
   createEmptyBoard,
   findLandingPosition,
@@ -132,8 +133,29 @@ function handleKeyEvent(state: BoardState, action: BoardAction) {
       break;
 
     case 'space':
-      state.cRow = findLandingPosition(state.board, state.activeBlock!, state.cRow, state.cCol);
-      //TODO commit here?
+      if (state.activeBlock) {
+        const landingRow = findLandingPosition(
+          state.board,
+          state.activeBlock,
+          state.cRow,
+          state.cCol,
+        );
+        state.cRow = landingRow;
+        const committed = structuredClone(state.board);
+        applyBlockOnBoard(committed, landingRow, state.cCol, state.activeBlock);
+        clearLines(committed);
+        state.board = committed;
+        const nextBlock = state.listBlock![state.nextBlockIndex];
+        state.nextBlockIndex++;
+        state.activeBlock = {
+          type: nextBlock,
+          shape: TETROMINO_SHAPES[nextBlock],
+          rState: 0,
+        };
+        state.cCol = 4;
+        state.cRow = 0;
+        state.isHoldAvailable = true;
+      }
       break;
     case 'hold':
       if (state.isHoldAvailable && state.activeBlock) {
