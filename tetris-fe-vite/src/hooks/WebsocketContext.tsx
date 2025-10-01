@@ -1,23 +1,28 @@
-
+/* eslint-disable react-refresh/only-export-components */
 // Update the import path below if WSMessage is located elsewhere in your project
-// Update the import path below if WSMessage is located elsewhere in your project
-import type { WSMessage } from "../types/common";
-import { createContext, type ReactNode, useCallback, useContext, useEffect, useRef, useState } from "react";
+import type { WSMessage } from '@/types/common';
+import {
+  createContext,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
-
 
 export type SendMessageFn = (msg: WSMessage) => void;
 export type ReceiveMessageFn = (handler: (msg: WSMessage) => void) => () => void;
 
 type WSContextType = {
-  
-  socket: WebSocket | null;
+  socketConn: WebSocket | null;
   sendMessage: SendMessageFn;
   subscribe: ReceiveMessageFn;
 };
 const WebSocketContext = createContext<WSContextType | null>(null);
-export const WebSocketProvider = ({
+export const WebsocketProvider = ({
   roomId,
   playerId,
   children,
@@ -30,26 +35,26 @@ export const WebSocketProvider = ({
   const [socket, setSocket] = useState<WebSocket | null>(null);
   const messageHandlersRef = useRef<Set<(rawMsg: WSMessage) => void>>(new Set());
   useEffect(() => {
-    roomId = "123456"; //fixed test
-    const url  = API_URL || "" 
-    const wsUrl = url.replace(/^http/, "ws") + `/ws?room=${roomId}&player=${playerId}`;
+    roomId = 'ABC12'; //fixed test
+    const url = API_URL || '';
+    const wsUrl = url.replace(/^http/, 'ws') + `/ws/match?room=${roomId}&player=${playerId}`;
     const ws = new WebSocket(wsUrl);
     setSocket(ws);
     socketRef.current = ws;
-    ws.onopen = () => console.log("WebSocket connected");
-    ws.onclose = () => console.log("WebSocket closed");
-    ws.onerror = (err) => console.error("WebSocket error", err);
-    const handleMessage = (event:MessageEvent)=>{
+    ws.onopen = () => console.log('WebSocket connected');
+    ws.onclose = () => console.log('WebSocket closed');
+    ws.onerror = (err) => console.error('WebSocket error', err);
+    const handleMessage = (event: MessageEvent) => {
       let msg: WSMessage;
       try {
         msg = JSON.parse(event.data);
       } catch {
-        console.warn("Invalid WS message:", event.data);
+        console.warn('Invalid WS message:', event.data);
         return;
       }
-       //send msg to all handler -- handler filter msg later
-       messageHandlersRef.current.forEach((h) => h(msg));
-    }
+      //send msg to all handler -- handler filter msg later
+      messageHandlersRef.current.forEach((h) => h(msg));
+    };
     ws.onmessage = handleMessage;
     const handleBeforeUnload = () => {
       if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
@@ -69,24 +74,27 @@ export const WebSocketProvider = ({
     };
   }, [roomId, playerId]);
 
-  const sendMessage = useCallback<SendMessageFn>((msg:WSMessage) => {
+  const sendMessage = useCallback<SendMessageFn>((msg: WSMessage) => {
     if (socketRef.current?.readyState === WebSocket.OPEN) {
       socketRef.current.send(JSON.stringify(msg));
     }
   }, []);
-  const subscribe= useCallback<ReceiveMessageFn>((handler)=>{
-    messageHandlersRef.current.add(handler)
+  const subscribe = useCallback<ReceiveMessageFn>((handler) => {
+    messageHandlersRef.current.add(handler);
     //return cleanup unsub callback
-    return ()=>{
-      messageHandlersRef.current.delete(handler)
-    }
-  },[])
+    return () => {
+      messageHandlersRef.current.delete(handler);
+    };
+  }, []);
 
-
-  return <WebSocketContext.Provider value={{socket,sendMessage,subscribe}}>{children}</WebSocketContext.Provider>;
+  return (
+    <WebSocketContext.Provider value={{ socketConn: socket, sendMessage, subscribe }}>
+      {children}
+    </WebSocketContext.Provider>
+  );
 };
-export const useWebSocket = ():WSContextType => {
+export const useWebsocket = ({ws_url:string}): WSContextType => {
   const ctx = useContext(WebSocketContext);
-  if (!ctx) throw new Error("useWebSocket must be inside WebSocketProvider");
+  if (!ctx) throw new Error('useWebSocket must be inside WebSocketProvider');
   return ctx;
 };

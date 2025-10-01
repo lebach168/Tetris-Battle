@@ -1,18 +1,13 @@
-"use client";
-import { useTetris } from "@/hooks/useTetris";
-import Board from "./Board";
-import Hold from "./Hold";
-import StatPanel from "./StatPanel";
-import { BoardGrid, TETROMINO_SHAPES, TetrominoType } from "@/types/tetris";
-import { useTetrisEventSource } from "@/hooks/useTetrisEventSource";
+'use client';
+import Board from './Board';
+import { BoardGrid } from '@/types/tetris';
 
-export default function PlayerSide({ board }: {board:BoardGrid }) {
-  const username = "You";
+export default function PlayerSide({ board }: { board: BoardGrid }) {
+  const username = 'You';
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-gray-900 text-white font-mono">
       <div className="flex flex-col items-center gap-3">
         {/* mang sang component cha */}
-        
 
         {/* Gameplay block: Hold + Board + StatPanel */}
         {

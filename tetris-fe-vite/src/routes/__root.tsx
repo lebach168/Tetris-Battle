@@ -4,10 +4,10 @@ import Navbar from '../components/Navbar';
 import { createRootRoute } from '@tanstack/react-router';
 import { TanStackRouterDevtools } from '@tanstack/react-router-devtools';
 import './globals.css'; 
+import NotFoundPage from './not-found';
 
 const RootLayout = () => {
   //const guestId = useGuestId();
-
   return (
     <div className="min-h-screen flex flex-col">
       <Navbar />
@@ -21,4 +21,6 @@ const RootLayout = () => {
 
 export const Route = createRootRoute({
   component: RootLayout,
+  notFoundComponent:NotFoundPage  
 });
+export default RootLayout

@@ -1,18 +1,14 @@
-import js from '@eslint/js'
-import globals from 'globals'
-import reactHooks from 'eslint-plugin-react-hooks'
-import reactRefresh from 'eslint-plugin-react-refresh'
-import tseslint from 'typescript-eslint'
-import { globalIgnores } from 'eslint/config'
+import js from '@eslint/js';
+import globals from 'globals';
+import reactHooks from 'eslint-plugin-react-hooks';
+import reactRefresh from 'eslint-plugin-react-refresh';
+import tseslint from 'typescript-eslint';
+import { globalIgnores } from 'eslint/config';
 
 export default tseslint.config([
   globalIgnores(['dist']),
   {
-     ignores: [
-      '**/dist/**',
-      '**/node_modules/**',
-      '**/*.test.tsx',
-    ],
+    ignores: ['**/dist/**', '**/node_modules/**', '**/*.test.tsx'],
     files: ['**/*.{ts,tsx}'],
     extends: [
       js.configs.recommended,
@@ -24,5 +20,11 @@ export default tseslint.config([
       ecmaVersion: 2020,
       globals: globals.browser,
     },
+    rules: {
+      'no-console': 'off',
+      '@typescript-eslint/no-unused-vars': 'off',
+      'no-unused-vars': 'off',
+      'react/prop-types': 'off',
+    },
   },
-])
+]);

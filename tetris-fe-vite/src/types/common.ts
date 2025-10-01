@@ -1,7 +1,7 @@
 export interface InputBuffer {
   left: boolean;
   right: boolean;
-  up: boolean; //rotate clockwise
+  rotate: boolean; //rotate clockwise with arrow up
   rotateCounterClockwise: boolean;
   down: boolean;
   space: boolean;
@@ -10,13 +10,13 @@ export interface InputBuffer {
   //botActions: BotAction[];
 }
 
-export type WSMessage = {
+export type WsMessage = {
   type: string;
   //to?: string; //might use in future
   payload: {
-    listBlock?: number[] ;//opponent blocks
-    startAt?: number;//millisecond from UNIX Epoch
-    key?:string;
+    listBlock?: number[]; //opponent blocks
+    startAt?: number; //millisecond from UNIX Epoch
+    key?: string;
     timestamp?: number;
   };
 };

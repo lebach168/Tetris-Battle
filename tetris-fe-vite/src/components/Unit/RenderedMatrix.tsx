@@ -1,7 +1,6 @@
 import Cell from "@/components/Gameplay/Cell";
-import { ReverseTetrominoMap, TetrominoMap, TetrominoType } from "@/types/tetris";
 
-export function renderShapeMatrix(shape: number[][], type: string, size = 18) {
+export default function RenderShapeMatrix(shape: number[][], type: string, size = 18) {
   const rows = shape.length;
   const cols = shape[0].length;
 
@@ -19,10 +18,3 @@ export function renderShapeMatrix(shape: number[][], type: string, size = 18) {
 }
 
 
-export function convertTetrominoToNumArray(arr: TetrominoType[]): number[] {
-  return arr.map(t => TetrominoMap[t]);
-}
-
-export function convertNumToTetrominoArray(arr:number[]):TetrominoType[]{
-  return arr.map(n=>ReverseTetrominoMap[n]);
-}

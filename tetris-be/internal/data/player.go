@@ -74,6 +74,7 @@ func (p *PlayerConn) Read() {
 			return
 		}
 		var send Packet
+		//TODO
 		//handle message here
 		
 		//exclude or include message
