@@ -1,4 +1,4 @@
-package data
+package game
 
 import (
 	"crypto/rand"
@@ -14,6 +14,7 @@ type Room struct {
 	join      chan *PlayerConn
 	leave     chan *PlayerConn
 	broadcast chan Packet
+	game      *Game
 
 	stop          chan struct{}
 	callbackClose func()
@@ -26,10 +27,13 @@ type Packet struct {
 
 func (r *Room) listenAndServe() {
 	defer r.callbackClose()
+
 	for {
 		select {
 		case player := <-r.join:
 			r.Players[player] = true
+
+			//fmt.Println(player.ID)//for debug
 		case player := <-r.leave:
 			if _, ok := r.Players[player]; ok {
 				delete(r.Players, player)
@@ -78,5 +82,6 @@ func NewRoom(roomID, key string, close func()) *Room {
 		broadcast:     make(chan Packet, 32),
 		stop:          make(chan struct{}),
 		callbackClose: close,
+		game:          NewGame(),
 	}
 }

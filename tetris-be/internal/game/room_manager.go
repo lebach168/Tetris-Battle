@@ -1,4 +1,4 @@
-package data
+package game
 
 import (
 	"fmt"
@@ -9,6 +9,7 @@ type RoomManager interface {
 	Get(roomID string) (*Room, error)
 	GetAllDTO() ([]RoomDTO, error)
 	CreateRoom(key string) (RoomDTO, error)
+	CreateMockRoom(id string) (RoomDTO, error)
 	JoinRoom(roomID string, key string) (RoomDTO, error)
 	AddPlayer(p *PlayerConn)
 }
@@ -87,10 +88,33 @@ func (i *InMemoryRoomManager) CreateRoom(key string) (RoomDTO, error) {
 	return RoomDTO{}, fmt.Errorf("server is busy")
 
 }
+
+func (i *InMemoryRoomManager) CreateMockRoom(id string) (RoomDTO, error) {
+	if _, ok := i.Rooms[id]; ok {
+		return i.Rooms[id].ToDTO(), nil
+	}
+	i.mu.Lock()
+	closeRoom := func() {
+		i.mu.Lock()
+		defer i.mu.Unlock()
+		delete(i.Rooms, id)
+	}
+	room := NewRoom(id, "", closeRoom)
+	i.Rooms[id] = room
+
+	i.mu.Unlock()
+	//unlock before listenAndServe listener goroutine
+	go room.listenAndServe()
+	return room.ToDTO(), nil
+	return RoomDTO{}, fmt.Errorf("server is busy")
+
+}
 func (i *InMemoryRoomManager) AddPlayer(p *PlayerConn) {
 	//join thông qua send vào goroutine room.listenAndServe()
 	room := p.r
 	room.join <- p
+
+	p.r.game.state.InitFrameQueue(p.ID)
 }
 
 func (i *InMemoryRoomManager) JoinRoom(roomID string, key string) (RoomDTO, error) {

@@ -1,6 +1,7 @@
-package data
+package game
 
 import (
+	"encoding/json"
 	"fmt"
 	"github.com/gorilla/websocket"
 	"time"
@@ -17,9 +18,9 @@ type PlayerConn struct {
 
 const (
 	//temp value, refactor it later
-	writeWait      = 6 * time.Second
-	pongWait       = 30 * time.Second
-	pingPeriod     = 20 * time.Second //must smaller than pong wait
+	writeWait      = 10 * time.Second
+	pongWait       = 60 * time.Second
+	pingPeriod     = 50 * time.Second //must smaller than pong wait
 	maxMessageSize = 1024 * 4         //4 kbyte
 
 )
@@ -29,14 +30,42 @@ var (
 	space   = []byte{' '}
 )
 
+type BoardState struct {
+	Board [][]int `json:"board,omitempty"`
+	Block [][]int `json:"block,omitempty"`
+	CRow  int     `json:"cRow,omitempty"`
+	CCol  int     `json:"cCol,omitempty"`
+}
+type Input struct {
+	Key   string
+	Frame int
+}
 type Message struct {
-	Action  string `json:"action,omitempty"`
-	Payload struct {
-		Tetrominos []int   `json:"tetrominos,omitempty"`
-		Board      [][]int `json:"board,omitempty"`
+	Type     string `json:"type"`
+	PlayerId string `json:"playerid,omitempty"`
+	Payload  struct {
+		Frame      int        `json:"frame,omitempty"`
+		ListBlock  []int      `json:"listBlock,omitempty"`
+		BoardState BoardState `json:"state,omitempty"`
+		Inputs     []Input    `json:"inputs,omitempty"`
+		StartAt    int64      `json:"startAt,omitempty"`
 	} `json:"payload"`
+	Timestamp int64 `json:"timestamp"`
 }
 
+func NewMessage(t string) Message {
+	return Message{
+		Type: t,
+		//Timestamp: time.Now().UnixMilli(),
+	}
+}
+func MarshalMessage(msg Message) []byte {
+	res, err := json.Marshal(msg)
+	if err != nil {
+		fmt.Errorf("marshal error ", err)
+	}
+	return res
+}
 func NewPlayerConn(ID string, room *Room, conn *websocket.Conn) *PlayerConn {
 	return &PlayerConn{
 		ID:   ID,
@@ -54,6 +83,25 @@ func (p *PlayerConn) SetConn(conn *websocket.Conn) {
 func (p *PlayerConn) GetRoomID() string {
 	return p.r.ID
 }
+
+/*
+Message Flow:
+
+   P.conn.Read()
+      ↓
+   p.conn.ReadMessage()
+      ↓
+   handleMessage() ==> r.Game.receiveInput(frame, input)
+  ==> apply input in gameloop.onUpdate()
+      ↓
+   room.broadcast <- (all or exclude sender)
+      ↓
+   oP.send<-
+	  ↓
+   other player.conn.Write()
+
+*/
+
 func (p *PlayerConn) Read() {
 	defer func() {
 		p.r.leave <- p
@@ -67,21 +115,20 @@ func (p *PlayerConn) Read() {
 	})
 	for {
 		_, msg, err := p.conn.ReadMessage()
+		//fmt.Printf("Server received: %s\n", msg)
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
 				fmt.Errorf("player %s disconnected: %v", p.ID, err)
 			}
 			return
 		}
-		var send Packet
 		//TODO
-		//handle message here
-		
-		//exclude or include message
+		p.handleGameMessage(msg)
 
-		p.r.broadcast <- send
 	}
 }
+
+// Write() k0 nhận message trực tiếp từ p.send, tất cả đều đi qua chan broadcast , broadcast sẽ gửi vào chan p.send
 func (p *PlayerConn) Write() {
 	ticker := time.NewTicker(pingPeriod) //send ping pong every period duration to simulate heartbeat of connection
 	defer func() {
@@ -119,6 +166,29 @@ func (p *PlayerConn) Write() {
 				return
 			}
 		}
+	}
+
+}
+
+func (p *PlayerConn) handleGameMessage(raw []byte) {
+
+	var msg Message
+	err := json.Unmarshal(raw, &msg)
+	if err != nil {
+		//
+	}
+
+	//exclude message
+	switch msg.Type {
+
+	case "input":
+		p.r.game.state.RecordInputs(p.ID, msg.Payload.Inputs)
+	case "":
+	case "start":
+		p.r.game.Init(p.ID, msg, p.r.broadcast)
+	default:
+		fmt.Printf("%v \n", msg)
+		break
 	}
 
 }

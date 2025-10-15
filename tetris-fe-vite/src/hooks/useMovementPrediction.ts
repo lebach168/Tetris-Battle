@@ -173,7 +173,7 @@ function handleKeyEvent(state: BoardState, action: BoardAction) {
       break;
   }
 }
-export const useGameBoard = (): {
+export const usePredictMovement = (): {
   boardState: BoardState;
   dispatchAction: Dispatch<BoardAction>;
 } => {
