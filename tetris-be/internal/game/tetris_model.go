@@ -118,7 +118,7 @@ func GetWallKickData(size int, fromShape, toShape int) KickOffsets {
 	}
 	k := fmt.Sprintf("%d->%d", fromShape, toShape)
 	if size == 4 {
-		return WallKickIAkira[k]
+		return WallKickI[k]
 	}
 	return WallKickJLSTZ[k]
 }

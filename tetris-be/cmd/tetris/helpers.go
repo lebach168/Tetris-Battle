@@ -23,7 +23,7 @@ const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 func LoadConfig() *Config {
 	var envPath string
 
-	flag.StringVar(&envPath, "env", "../../.env.local", "Path to .env file")
+	flag.StringVar(&envPath, "env", ".env.local", "Path to .env file")
 	flag.Parse()
 
 	if err := godotenv.Load(envPath); err != nil {
@@ -160,3 +160,12 @@ func generateID(n int) (string, error) {
 }
 
 type envelope map[string]interface{}
+
+func CopySlice(src [][]int) [][]int {
+	dst := make([][]int, len(src))
+	for i := range src {
+		dst[i] = make([]int, len(src[i]))
+		copy(dst[i], src[i])
+	}
+	return dst
+}

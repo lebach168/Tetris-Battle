@@ -1,7 +1,6 @@
 package game
 
 import (
-	"fmt"
 	"math"
 	"math/rand"
 )
@@ -86,17 +85,21 @@ func copySlice(src [][]int) [][]int {
 	return dst
 }
 
-func hasCollision(board [][]int, block [][]int, row, col int) bool {
-	for i := range block {
-		for j, cell := range block[i] {
-			if cell > 0 {
-				bRow := row + i
-				bCol := col + j
-				if bRow < 0 || bCol < 0 || bRow >= BOARD_HEIGHT || bCol >= BOARD_WIDTH || board[bRow][bCol] != 0 {
-					return true
-				}
+func hasCollision(board [][]int, shape [][]int, row, col int) bool {
+	for y := 0; y < len(shape); y++ {
+		for x := 0; x < len(shape[y]); x++ {
+			if shape[y][x] == 0 {
+				continue
 			}
+			boardY := row + y
+			boardX := col + x
 
+			if boardY < 0 || boardY >= len(board) || boardX < 0 || boardX >= len(board[0]) {
+				return true
+			}
+			if board[boardY][boardX] != 0 {
+				return true
+			}
 		}
 	}
 	return false
@@ -137,8 +140,8 @@ func CheckGameOver(board [][]int, nextBlock [][]int) bool {
 type SpecialMove struct {
 }
 
-// ClearLines return number of rows has cleared and update board after applied board
-func ClearLines(board [][]int) int {
+// clearLines return number of rows has cleared and update board after applied board
+func clearLines(board [][]int) int {
 	var newBoard [][]int
 	cleared := 0
 
@@ -173,7 +176,7 @@ func ClearLines(board [][]int) int {
 	return cleared
 }
 func placeBlock(gs *GameState, ps *PlayerState, block [][]int, row, col int) {
-	fmt.Printf("place block row:%v col:%v\n block:%v\n", row, col, block)
+	//fmt.Printf("place block row:%v col:%v\n block:%v\n", row, col, block)
 	for i := range block {
 		for j := range block[i] {
 			if block[i][j] != 0 {
@@ -181,7 +184,7 @@ func placeBlock(gs *GameState, ps *PlayerState, block [][]int, row, col int) {
 			}
 		}
 	}
-	lines := ClearLines(ps.board)
+	lines := clearLines(ps.board)
 	if lines > 0 {
 		//TODO
 	}

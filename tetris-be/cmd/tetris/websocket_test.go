@@ -9,7 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"tetris-be/internal/data"
+	"tetris-be/internal/game"
 )
 
 func TestWebsocketConnection(t *testing.T) {
@@ -56,7 +56,7 @@ func TestSendAndReceiveMessage(t *testing.T) {
 		_, msgReceived, err := clientConn.ReadMessage()
 		assertNoError(t, err)
 		fmt.Println(string(msgReceived))
-		var msgType data.Message
+		var msgType game.Message
 		assert.JSONEq(t, string(msg), string(msgReceived))
 
 		err = json.Unmarshal(msgReceived, &msgType)
@@ -115,40 +115,40 @@ func newWsRequest(roomID, playerID string) *http.Request {
 }
 
 //type StubRoomManager struct {
-//	rooms map[string]*data.Room
+//	rooms map[string]*game.Room
 //}
-//func (s *StubRoomManager) JoinRoom(roomID string, key string) (data.RoomDTO, error) {
+//func (s *StubRoomManager) JoinRoom(roomID string, key string) (game.RoomDTO, error) {
 //	//TODO implement me
 //	panic("implement me")
 //}
 //
 //func NewStubRoomManager() *StubRoomManager {
 //	return &StubRoomManager{
-//		rooms: make(map[string]*data.Room),
+//		rooms: make(map[string]*game.Room),
 //	}
 //}
 //
-//func (s *StubRoomManager) GetAllDTO() ([]data.RoomDTO, error) {
+//func (s *StubRoomManager) GetAllDTO() ([]game.RoomDTO, error) {
 //
 //	panic("implement me")
 //}
-//func (s *StubRoomManager) Get(roomID string) (*data.Room, error) {
+//func (s *StubRoomManager) Get(roomID string) (*game.Room, error) {
 //	if room, exists := s.rooms[roomID]; exists {
 //		return room, nil
 //	}
 //	return nil, errors.New("room not found")
 //}
 //
-//func (s *StubRoomManager) AddPlayer(player *data.PlayerConn) {
+//func (s *StubRoomManager) AddPlayer(player *game.PlayerConn) {
 //	room := s.rooms[player.GetRoomID()]
 //	player.SetConn(conn)
 //
 //	room.join <- player
 //}
 //
-//func (s *StubRoomManager) CreateRoom(key string) *data.Room {
-//	roomID, _ := data.GenerateID(5)
-//	room := &data.Room{
+//func (s *StubRoomManager) CreateRoom(key string) *game.Room {
+//	roomID, _ := game.GenerateID(5)
+//	room := &game.Room{
 //		ID: roomID,
 //	}
 //	s.rooms[roomID] = room

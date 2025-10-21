@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 	"net/http"
-	"tetris-be/internal/data"
+	"tetris-be/internal/game"
 	"tetris-be/internal/validator"
 )
 
@@ -12,7 +12,7 @@ type input struct {
 	Key      string
 }
 
-func getAllRoomsHandler(roomManager data.RoomManager) http.Handler {
+func getAllRoomsHandler(roomManager game.RoomManager) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		data, err := roomManager.GetAllDTO()
 		if err != nil {
@@ -23,7 +23,7 @@ func getAllRoomsHandler(roomManager data.RoomManager) http.Handler {
 	})
 }
 
-func joinRoomHandler(cfg *Config, roomManager data.RoomManager) http.Handler {
+func joinRoomHandler(cfg *Config, roomManager game.RoomManager) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		//read param
 		roomID := readString(r.URL.Query(), "roomid", "")
@@ -43,7 +43,7 @@ func joinRoomHandler(cfg *Config, roomManager data.RoomManager) http.Handler {
 		}
 
 		//call service - join or create
-		var data data.RoomDTO
+		var data game.RoomDTO
 		switch roomID {
 		case "":
 			data, err = roomManager.CreateRoom(in.Key)

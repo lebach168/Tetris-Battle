@@ -2,6 +2,7 @@ package game
 
 import (
 	"crypto/rand"
+	"log"
 	"math/big"
 )
 
@@ -10,7 +11,7 @@ const letters = "abcdefghijklmnopqrstxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 type Room struct {
 	ID        string
 	Key       string
-	Players   map[*PlayerConn]bool
+	Players   map[string]*PlayerConn // map[playerId] *PlayerConn
 	join      chan *PlayerConn
 	leave     chan *PlayerConn
 	broadcast chan Packet
@@ -30,28 +31,29 @@ func (r *Room) listenAndServe() {
 
 	for {
 		select {
-		case player := <-r.join:
-			r.Players[player] = true
-
+		case pConn := <-r.join:
+			r.Players[pConn.ID] = pConn
+			log.Printf("[ws][room:%s] num players: %v ", r.ID, len(r.Players))
 			//fmt.Println(player.ID)//for debug
 		case player := <-r.leave:
-			if _, ok := r.Players[player]; ok {
-				delete(r.Players, player)
+			if conn, ok := r.Players[player.ID]; ok && conn != nil {
+				delete(r.Players, player.ID)
 				close(player.send)
 			}
 			if len(r.Players) == 0 {
 				close(r.stop)
 			}
 		case msg := <-r.broadcast:
-			for p := range r.Players {
-				if p.ID == msg.excludeID {
+			for _, pConn := range r.Players {
+				if pConn.ID == msg.excludeID {
 					continue
 				}
 				select {
-				case p.send <- msg.body:
+				case pConn.send <- msg.body:
 				default: //send channel is blocked
-					close(p.send)
-					delete(r.Players, p)
+					log.Printf("Drop message for %s: outbound full", pConn.ID)
+					close(pConn.send)
+					delete(r.Players, pConn.ID)
 				}
 
 			}
@@ -76,7 +78,7 @@ func NewRoom(roomID, key string, close func()) *Room {
 	return &Room{
 		ID:            roomID,
 		Key:           key,
-		Players:       make(map[*PlayerConn]bool),
+		Players:       make(map[string]*PlayerConn),
 		join:          make(chan *PlayerConn),
 		leave:         make(chan *PlayerConn),
 		broadcast:     make(chan Packet, 32),

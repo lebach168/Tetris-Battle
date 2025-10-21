@@ -3,14 +3,14 @@ package main
 import (
 	"log/slog"
 	"net/http"
-	"tetris-be/internal/data"
+	"tetris-be/internal/game"
 )
 
 func addRoutes(
 	mux *http.ServeMux,
 	logger *slog.Logger,
 	config *Config,
-	roomManager data.RoomManager,
+	roomManager game.RoomManager,
 ) http.Handler {
 
 	mux.HandleFunc("GET /healthcheck", healthcheck)

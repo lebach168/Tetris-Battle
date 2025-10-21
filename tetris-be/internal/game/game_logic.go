@@ -3,75 +3,60 @@ package game
 import (
 	"errors"
 	"fmt"
+	"sync"
 )
 
 type GameState struct {
-	frames    map[string]*FrameQueue // map key : player id
-	curF      int                    //pointer on lastest confirmed frame
-	listBlock []int
+	frames map[string]*FrameQueue // map key : player id
+	/*
+		If the gap between curFrame and gl.serverFrame becomes large because the client hasn't sent periodic
+		updates—  the server will auto simulate the frames state for that duration.
+	*/
+	curFrame     int //lastest confirmed serverFrame, if diff from curFrame and gl.serverFrame
+	listBlock    []int
+	mu           sync.Mutex
+	inputCounter int
 }
 
 func NewGameState() *GameState {
 	return &GameState{
 		frames:    make(map[string]*FrameQueue),
-		curF:      1,
+		curFrame:  0,
 		listBlock: make([]int, 0),
 	}
 }
 
 // This is fixed size circular queue stores 30 latest data state
 type FrameQueue struct {
-	data        []*PlayerState
-	latestFrame int
-	head        int //head index
-	tail        int //tail index
-	cap         int
-	size        int
+	data      []*PlayerState
+	headFrame int //headframe is a pointer on latest frame has confirmed
+	head      int //head index
+	tail      int //tail index
+	cap       int
+	size      int
 }
 
 // NewQueue creates and returns a new generic Queue
 func NewQueue(cap int) *FrameQueue {
-	return &FrameQueue{
-		data:        make([]*PlayerState, cap),
-		latestFrame: 0,
-		head:        0,
-		cap:         cap,
-		size:        0,
+	this := &FrameQueue{
+		data:      make([]*PlayerState, cap),
+		headFrame: 0,
+		head:      0,
+		cap:       cap,
+		size:      0,
 	}
+	for i := 0; i < cap; i++ {
+		this.data[i] = NewDefaultPlayerState()
+	}
+	return this
 }
+
 func (q *FrameQueue) PlayerStateOfFrame(frame int) (*PlayerState, error) {
-	dif := q.latestFrame - frame
-	if dif > 30 {
-		return nil, errors.New("outdated")
+	diff := q.headFrame - frame
+	if diff > 30 || diff < -30 {
+		return nil, errors.New("out of range")
 	}
-	return q.data[(q.head-dif+q.cap)%q.cap], nil
-}
-
-// Enqueue adds an element to the back of the queue
-func (q *FrameQueue) AddNew(value *PlayerState) {
-
-	q.latestFrame++
-	if q.size < q.cap {
-		q.size++
-	}
-
-	if q.data[q.head] == nil {
-		q.data[q.head] = value
-	}
-	*q.data[q.head] = *value
-	q.head = (q.head + 1) % q.cap
-	if q.tail == q.head {
-		q.tail = (q.tail + 1) % q.cap
-	}
-}
-
-// Add basically increase frame counter and re calculate head and tail index
-func (q *FrameQueue) Add() {
-	q.latestFrame++
-	q.head = (q.head + 1) % q.cap
-	if q.tail == q.head {
-		q.tail = (q.tail + 1) % q.cap
-	}
+	return q.data[(q.head-diff+q.cap)%q.cap], nil
 }
 
 // Dequeue removes and returns the front element of the queue

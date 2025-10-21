@@ -7,26 +7,26 @@ import (
 
 const defaultTicks = 30 // 30tick per second ~ 33.33ms
 type GameLoop struct {
-	frame    int
-	playerId string
-	quit     chan struct{}
-	pause    chan struct{}
-	resume   chan struct{}
-	tick     time.Duration //t per sec
-	tickerC  <-chan time.Time
-	onUpdate func(string, chan Packet)
+	serverFrame int
+	playerId    string
+	quit        chan struct{}
+	pause       chan struct{}
+	resume      chan struct{}
+	tick        time.Duration //t per sec
+	tickerC     <-chan time.Time
+	onUpdate    func(string, chan Packet)
 }
 
 func NewGameLoop(playerId string, onUpdate func(string, chan Packet)) *GameLoop {
 	return &GameLoop{
-		frame:    0,
-		playerId: playerId,
-		quit:     make(chan struct{}),
-		pause:    make(chan struct{}),
-		resume:   make(chan struct{}),
-		tick:     defaultTicks,
-		tickerC:  nil,
-		onUpdate: onUpdate,
+		serverFrame: 0,
+		playerId:    playerId,
+		quit:        make(chan struct{}),
+		pause:       make(chan struct{}),
+		resume:      make(chan struct{}),
+		tick:        defaultTicks,
+		tickerC:     nil,
+		onUpdate:    onUpdate,
 	}
 }
 func (gl *GameLoop) NewTicker() *time.Ticker {
@@ -41,8 +41,10 @@ func (gl *GameLoop) Run(broadcast chan Packet) {
 	for {
 		select {
 		case <-gl.tickerC:
-			//compute frame every tick
+			//compute serverFrame every tick
+
 			gl.onUpdate(gl.playerId, broadcast)
+			gl.serverFrame++
 		case <-gl.pause:
 			ticker.Stop()
 			gl.tickerC = nil
@@ -61,15 +63,5 @@ func (g *GameLoop) startLoop() {
 
 }
 func (g *GameLoop) restart() {
-
-}
-func (g *GameLoop) stop() {
-	g.quit <- struct{}{}
-}
-
-func (g *Game) pause() {
-
-}
-func (g *Game) unpause() {
 
 }

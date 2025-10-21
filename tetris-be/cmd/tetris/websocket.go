@@ -2,8 +2,9 @@ package main
 
 import (
 	"github.com/gorilla/websocket"
+	"log"
 	"net/http"
-	"tetris-be/internal/data"
+	"tetris-be/internal/game"
 )
 
 const (
@@ -19,25 +20,31 @@ var upgrader = websocket.Upgrader{
 		//return origin == "https://frontend.com"
 
 	},
+	Error: func(w http.ResponseWriter, r *http.Request, status int, reason error) {
+		log.Printf("WebSocket upgrade error: %v, Status: %d", reason, status)
+		http.Error(w, reason.Error(), status)
+	},
 }
 
-func serveWs(roomManager data.RoomManager) http.Handler {
+func serveWs(roomManager game.RoomManager) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		conn, err := upgrader.Upgrade(w, r, nil)
-		if err != nil {
-			serverErrorResponse(w, r, err)
-			return
-		}
-
 		roomID := readString(r.URL.Query(), "roomid", "")
 		playerID := readString(r.URL.Query(), "playerid", "")
+		roomManager.CreateMockRoom(roomID) //test only should delete this room id = ABC12
 		room, err := roomManager.Get(roomID)
 		if err != nil {
 			notFoundResponse(w, r)
 			return
 		}
-		player := data.NewPlayerConn(playerID, room, conn)
+		//upgrade sau error để trả http response, sau khi upgrade thành công ws conn không sửa header dc nữa.
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			serverErrorResponse(w, r, err)
+			return
+		}
+		player := game.NewPlayerConn(playerID, room, conn)
 		roomManager.AddPlayer(player)
+
 		go player.Read()
 		go player.Write()
 	})

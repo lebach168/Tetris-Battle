@@ -10,7 +10,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-	"tetris-be/internal/data"
+	"tetris-be/internal/game"
 )
 
 func TestGetRooms(t *testing.T) {
@@ -25,7 +25,7 @@ func TestGetRooms(t *testing.T) {
 		assertStatusCode(t, http.StatusOK, response.Code)
 		assertContentType(t, "application/json", response.Header().Get("Content-Type"))
 		var responseBody struct {
-			Rooms []data.RoomDTO `json:"rooms"`
+			Rooms []game.RoomDTO `json:"rooms"`
 		}
 		err := json.NewDecoder(response.Body).Decode(&responseBody)
 		assertNoError(t, err)
@@ -50,15 +50,15 @@ func TestJoinRoom(t *testing.T) {
 		server.ServeHTTP(response, req)
 		assertStatusCode(t, http.StatusAccepted, response.Code)
 		var responseBody struct {
-			Room  data.RoomDTO `json:"room"`
+			Room  game.RoomDTO `json:"room"`
 			WsURL string       `json:"ws_url"`
 		}
 		err := json.NewDecoder(response.Body).Decode(&responseBody)
 		assertNoError(t, err)
 		assertWsURL(t, responseBody.WsURL)
-		expectedRoom := data.RoomDTO{
+		expectedRoom := game.RoomDTO{
 			ID: roomID,
-			Players: []data.PlayerDTO{
+			Players: []game.PlayerDTO{
 				{ID: "anon123"},
 			},
 		}
@@ -80,7 +80,7 @@ func TestJoinRoom(t *testing.T) {
 		assertStatusCode(t, http.StatusAccepted, response.Code)
 
 		var responseBody struct {
-			Room  data.RoomDTO `json:"room"`
+			Room  game.RoomDTO `json:"room"`
 			WsURL string       `json:"ws_url"`
 		}
 		err := json.NewDecoder(response.Body).Decode(&responseBody)
@@ -128,20 +128,20 @@ func TestJoinRoom(t *testing.T) {
 	})
 }
 
-func newStubRoomManager() *data.InMemoryRoomManager {
-	stubRoomManager := data.NewInMemoryRoomManager()
-	rooms := []data.Room{
+func newStubRoomManager() *game.InMemoryRoomManager {
+	stubRoomManager := game.NewInMemoryRoomManager()
+	rooms := []game.Room{
 		{
 			ID:  "ABC12",
 			Key: "key-1",
-			Players: map[*data.PlayerConn]bool{
+			Players: map[*game.PlayerConn]bool{
 				{ID: "anon123"}: true,
 			},
 		},
 		{
 			ID:  "DEF34",
 			Key: "key-2",
-			Players: map[*data.PlayerConn]bool{
+			Players: map[*game.PlayerConn]bool{
 				{ID: "player-2"}: true,
 				{ID: "player-3"}: true,
 			},
@@ -149,7 +149,7 @@ func newStubRoomManager() *data.InMemoryRoomManager {
 		{
 			ID:      "XYZ00",
 			Key:     "key-3",
-			Players: make(map[*data.PlayerConn]bool), // empty room
+			Players: make(map[*game.PlayerConn]bool), // empty room
 		},
 	}
 	for _, room := range rooms {
@@ -195,13 +195,13 @@ func assertNoError(t testing.TB, err error) {
 		t.Fatalf("did not expect error but got: %v", err)
 	}
 }
-func assertRoomSize(t *testing.T, players []data.PlayerConn, expectedSize int) {
+func assertRoomSize(t *testing.T, players []game.PlayerConn, expectedSize int) {
 	t.Helper()
 	if len(players) != expectedSize {
 		t.Errorf("expected %d players in room, got %d", expectedSize, len(players))
 	}
 }
-func assertPlayerInRoom(t *testing.T, players []data.PlayerConn, expectedPlayerID string) {
+func assertPlayerInRoom(t *testing.T, players []game.PlayerConn, expectedPlayerID string) {
 	t.Helper()
 	found := false
 	for _, player := range players {
@@ -221,7 +221,7 @@ func assertStatusCode(t testing.TB, want, got int) {
 		t.Errorf("got status %v, want %v ", got, want)
 	}
 }
-func assertRooms(t testing.TB, want, got []data.RoomDTO) {
+func assertRooms(t testing.TB, want, got []game.RoomDTO) {
 	t.Helper()
 
 	if len(got) != len(want) {
@@ -229,15 +229,15 @@ func assertRooms(t testing.TB, want, got []data.RoomDTO) {
 	}
 
 }
-func assertRoom(t testing.TB, want, got data.RoomDTO) {
+func assertRoom(t testing.TB, want, got game.RoomDTO) {
 	t.Helper()
 
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got %v want %v", got, want)
 	}
 }
-func getRoomsFromResponse(body string) ([]data.Room, error) {
-	data := make(map[string][]data.Room)
+func getRoomsFromResponse(body string) ([]game.Room, error) {
+	data := make(map[string][]game.Room)
 	if err := json.Unmarshal([]byte(body), &data); err != nil {
 		return nil, err
 	}

@@ -32,8 +32,8 @@ func (r Room) ToDTO() RoomDTO {
 		ID: r.ID,
 	}
 
-	for p := range r.Players {
-		dto.Players = append(dto.Players, PlayerDTO{ID: p.ID})
+	for _, pConn := range r.Players {
+		dto.Players = append(dto.Players, PlayerDTO{ID: pConn.ID})
 	}
 
 	return dto
@@ -114,7 +114,6 @@ func (i *InMemoryRoomManager) AddPlayer(p *PlayerConn) {
 	room := p.r
 	room.join <- p
 
-	p.r.game.state.InitFrameQueue(p.ID)
 }
 
 func (i *InMemoryRoomManager) JoinRoom(roomID string, key string) (RoomDTO, error) {

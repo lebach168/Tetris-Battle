@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"sync"
 	"syscall"
-	"tetris-be/internal/data"
+	"tetris-be/internal/game"
 	"time"
 
 	"net/http"
@@ -22,7 +22,8 @@ func run(ctx context.Context) error {
 	defer cancel()
 
 	cfg := LoadConfig()
-	serverHandler := NewServerHandler(logger, cfg, nil)
+	roomStorage := game.NewInMemoryRoomManager()
+	serverHandler := NewServerHandler(logger, cfg, roomStorage)
 
 	//v1 := http.NewServeMux()
 	//v1.Handle("/v1/", http.StripPrefix("/v1", mux))
@@ -58,7 +59,7 @@ type Config struct {
 	port int
 }
 
-func NewServerHandler(logger *slog.Logger, config *Config, roomManager data.RoomManager) http.Handler {
+func NewServerHandler(logger *slog.Logger, config *Config, roomManager game.RoomManager) http.Handler {
 	mux := http.NewServeMux()
 
 	addRoutes(mux, logger, config, roomManager)
