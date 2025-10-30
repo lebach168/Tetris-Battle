@@ -58,8 +58,8 @@ Message Flow:
 	      ↓
 	   p.conn.ReadMessage()
 	      ↓
-	   handleMessage() ==> r.Game.receiveInput(serverFrame, input)
-	  ==> apply input in gameloop.onUpdate()
+	   handleMessage() ==> r.Game.receiveInput(serverFrame, inputBuffer)
+	  ==> apply inputBuffer in gameloop.onUpdate()
 	      ↓
 	   room.broadcast <- (all or exclude sender)
 	      ↓
@@ -169,8 +169,8 @@ func (p *PlayerConn) handleGameMessage(raw []byte) {
 	//exclude message
 	switch msg.Type {
 
-	case "input":
-		p.r.game.state.recordInputs(p.ID, msg.Payload.Inputs, msg.Payload.LatestFrame)
+	case "inputs":
+		p.r.game.state.recordInputs(p.ID, msg.Payload.Inputs, msg.Payload.LatestFrame, p.r.broadcast)
 
 	case "ping":
 		p.r.game.computeDelayBuffer(msg, p.r.broadcast)
@@ -196,8 +196,8 @@ type BoardState struct {
 	CCol  int     `json:"cCol"`
 }
 type Input struct {
-	Key   string
-	Frame int
+	Keys  []string `json:"keys"`
+	Frame int      `json:"frame"`
 }
 type Message struct {
 	Type     string `json:"type"`

@@ -1,13 +1,19 @@
 package game
 
-import "fmt"
+import (
+	"fmt"
+	"time"
+)
 
 const BOARD_WIDTH = 10
 const BOARD_HEIGHT = 22
 const SOFT_DROP = 100
-const LOCKDELAY = 300
-const DROPSPEED = 800
-const QUEUE_SIZE = 30
+const LOCKDELAY float64 = 300
+const DROPSPEED float64 = 800
+const QUEUE_SIZE = 100
+const TICK = 30
+
+var INTERVAL = float64(time.Second.Milliseconds()) / float64(time.Duration(TICK))
 
 var Tetromino = map[int]Block{
 	1: { //I

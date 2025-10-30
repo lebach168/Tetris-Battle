@@ -2,10 +2,29 @@ package game
 
 import (
 	"errors"
-	"fmt"
 	"log"
+	"sync"
 	"time"
 )
+
+type GameState struct {
+	frames map[string]*FrameQueue // map key : player id
+	/*
+		If the gap between curFrame and gl.serverFrame becomes large because the client hasn't sent periodic
+		updates—  the server will auto simulate the frames state for that duration.
+	*/
+	curFrame  int //lastest confirmed serverFrame, if diff from curFrame and gl.serverFrame
+	listBlock []int
+	mu        sync.Mutex
+}
+
+func NewGameState() *GameState {
+	return &GameState{
+		frames:    make(map[string]*FrameQueue),
+		curFrame:  0,
+		listBlock: make([]int, 0),
+	}
+}
 
 type PlayerState struct {
 	board [][]int
@@ -16,10 +35,11 @@ type PlayerState struct {
 	cRow         int
 	cCol         int
 	canHold      bool
-	dropSpeed    int
-	input        InputBuffer // map fat pointer
-	accumulator  float64
-	isCommitting bool
+	dropSpeed    float64
+	inputBuffer  InputBuffer // map fat pointer
+	gravityTimer float64
+	lockTimer    float64
+	onGround     bool
 	/*
 	 combo int
 	 backToBack string
@@ -28,27 +48,27 @@ type PlayerState struct {
 }
 
 func NewPlayerState(board [][]int, blockIndex int, block Block, holdBlock int, cRow, cCol int, canHold bool,
-	dropSpeed int, input InputBuffer, accumulator float64, isCommiting bool) *PlayerState {
+	dropSpeed float64, input InputBuffer, accumulator float64, onGround bool) *PlayerState {
 	return &PlayerState{
 		board:        board,
 		blockIndex:   blockIndex,
 		block:        block,
-		holdBlock:    holdBlock, //o is empty value
+		holdBlock:    holdBlock, //0 is empty value
 		cRow:         cRow,
 		cCol:         cCol,
 		canHold:      canHold,
 		dropSpeed:    dropSpeed,
-		input:        input,
-		accumulator:  accumulator,
-		isCommitting: isCommiting,
+		inputBuffer:  input,
+		gravityTimer: accumulator,
+		onGround:     onGround,
 	}
 }
 func NewDefaultPlayerState() *PlayerState {
 	return &PlayerState{
-		board:     CreateEmptyBoard(),
-		canHold:   true,
-		dropSpeed: DROPSPEED,
-		input:     make(InputBuffer),
+		board:       CreateEmptyBoard(),
+		canHold:     true,
+		dropSpeed:   DROPSPEED,
+		inputBuffer: make(InputBuffer),
 	}
 }
 
@@ -75,6 +95,7 @@ type Game struct {
 }
 
 var ErrGameOver = errors.New("game over")
+var ErrOutOfRange = errors.New("out of range")
 
 func NewGame() *Game {
 	return &Game{
@@ -105,8 +126,10 @@ func (g *Game) Init(playerId string, msg Message, broadcast chan Packet) {
 }
 func (g *Game) StartGame(playerId string, broadcast chan Packet) {
 	list := g.state.listBlock
-	firstState := NewPlayerState(CreateEmptyBoard(), 0, Tetromino[list[0]], 0, 0, 4, true, DROPSPEED, make(InputBuffer), 0, false)
+	firstState := NewPlayerState(CreateEmptyBoard(), 0, Tetromino[list[0]], 0, 0, 4, true, DROPSPEED,
+		make(InputBuffer), 0, false)
 	g.state.frames[playerId].data[0] = firstState
+	g.state.curFrame = 1
 
 	go g.gl.Run(broadcast)
 }
@@ -121,14 +144,14 @@ func (g *Game) onUpdate(playerId string, broadcast chan Packet) {
 	frameQueue := g.state.frames[playerId]
 	//update current serverFrame if client inactive in sending messages
 	g.state.mu.Lock()
-	if g.state.curFrame+3 < g.gl.serverFrame {
-		g.state.curFrame = g.gl.serverFrame
+	if g.state.curFrame+4 < g.gl.serverFrame {
+		g.state.curFrame++
 	}
 
 	g.state.mu.Unlock()
 
-	//update serverFrame depends on state.currentFrame
-	err := g.state.computeBatchFrames(frameQueue.headFrame+1, g.state.curFrame, playerId, g.gl.tick) //
+	//update serverFrame depends on state.curFrame
+	err := g.state.computeBatchFrames(frameQueue.pFrame+1, g.state.curFrame, playerId) //
 	if err == ErrGameOver {
 		g.Stop()
 		//TODO send game over message
@@ -136,202 +159,140 @@ func (g *Game) onUpdate(playerId string, broadcast chan Packet) {
 	if g.gl.serverFrame%3 == 0 {
 		msg := NewMessage("opponent") //temp type
 		var packet Packet
-		ps, err := frameQueue.PlayerStateOfFrame(frameQueue.headFrame)
+		ps, err := frameQueue.Get(frameQueue.pFrame)
 		if err != nil || ps == nil {
 			log.Printf("something wrong with PlayerState %s\n", err.Error())
 		}
 		msg.Payload.BoardState = BoardState{ps.board, ps.block.shape, ps.cRow, ps.cCol}
-		msg.Payload.LatestFrame = frameQueue.headFrame
+		msg.Payload.LatestFrame = frameQueue.pFrame
 
 		packet.body = MarshalMessage(msg)
 		broadcast <- packet
+
 	}
 
 }
 
-func (state *GameState) computeBatchFrames(fromFrame, toFrame int, playerId string, tick time.Duration) error {
+func (state *GameState) computeBatchFrames(fromFrame, toFrame int, playerId string) error {
 
-	f := state.frames[playerId]
+	f := state.frames[playerId] // frame queue
+
 	if fromFrame > toFrame {
 		return nil
 	}
-
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	for i := fromFrame; i <= toFrame; i++ {
-		if i == 0 {
-			continue
-		}
-		//TODO log all frames input here for deterministic replay
-		ps, _ := f.PlayerStateOfFrame(i)
-		previous, _ := f.PlayerStateOfFrame(i - 1)
+
+		//TODO log all frames inputBuffer here for deterministic replay
+		ps, _ := f.Get(i)
+		previous, _ := f.Get(i - 1)
 		propagateState(previous, ps)
-		//clean computed frame input
-		for k := range previous.input {
-			delete(previous.input, k)
-		}
-		//
-		f.head++
-		f.headFrame++
-		//check game over
-		if CheckGameOver(ps.board, ps.block.shape) {
-			return errors.New("game over")
-		}
-		//apply input then check gravity drop
-		input := ps.input
 
+		//TODO check logic queue head
+		//apply inputBuffer
+		input := ps.inputBuffer
 		if len(input) > 0 {
-			if input[spacebar] {
-				landingRow := FindLandingPosition(ps.board, ps.block.shape, ps.cRow, ps.cCol)
-				placeBlock(state, ps, ps.block.shape, landingRow, ps.cCol)
-				ps.accumulator = 0
-				continue
-
-			}
-			if input[left] {
-				ps.cCol--
-				if hasCollision(ps.board, ps.block.shape, ps.cRow, ps.cCol) {
-					ps.cCol++ // Revert
-				}
-			}
-			if input[right] {
-				ps.cCol++
-				if hasCollision(ps.board, ps.block.shape, ps.cRow, ps.cCol) {
-					ps.cCol-- // Revert
-				}
-			}
-
-			// Rotate (rotate clockwise, rrotate counterclockwise)
-			if input[rotate] || input[rrotate] {
-
-				rotatedShape := copySlice(ps.block.shape)
-				x := 1
-				if ok := input[rotate]; ok {
-					rotatedShape = RotateRight(rotatedShape)
-				} else {
-					rotatedShape = RotateLeft(rotatedShape)
-					x = 3 //3 = -1 in modula
-				}
-				form := ps.block.form
-				newForm := (form + x) % 4
-				if !hasCollision(ps.board, rotatedShape, ps.cRow, ps.cCol) {
-					ps.block.shape = rotatedShape
-					ps.block.form = newForm
-
-				} else {
-					wallkickOffset := GetWallKickData(len(ps.block.shape), form, newForm)
-					for _, d := range wallkickOffset {
-						newRow := ps.cRow + d[1]
-						newCol := ps.cCol + d[0]
-						if !hasCollision(ps.board, rotatedShape, newRow, newCol) {
-							fmt.Printf("Applying wall kick: dx=%v, dy=%v\n", d[0], d[1])
-							ps.cRow = newRow
-							ps.cCol = newCol
-							ps.block.shape = rotatedShape
-							ps.block.form = newForm
-							break
-						}
-					}
-				}
-
-			}
-
-			// Vertical moves (down soft drop key down set dropspeed -> 100ms, space hard drop)
-			if input[down] {
-				landingRow := FindLandingPosition(ps.board, ps.block.shape, ps.cRow, ps.cCol)
-				if ps.cRow < landingRow {
-					ps.dropSpeed = SOFT_DROP
-				}
-
-			}
-			if input[downOff] {
-				if ps.dropSpeed == SOFT_DROP {
-					ps.dropSpeed = DROPSPEED
-				}
-
-			}
-
-			// Hold
-			if input[hold] && ps.canHold {
-				if ps.holdBlock == 0 {
-					ps.holdBlock = state.listBlock[ps.blockIndex]
-					ps.blockIndex++
-					ps.block = Tetromino[state.listBlock[ps.blockIndex]]
-
-				} else {
-					ps.block = Tetromino[ps.holdBlock]
-					ps.holdBlock = state.listBlock[ps.blockIndex]
-				}
-				ps.cRow = 0
-				ps.cCol = 4
-				ps.canHold = false
-			}
+			applyInputBuffer(state, ps, input)
 		}
+		landingRow := FindLandingPosition(ps.board, ps.block.shape, ps.cRow, ps.cCol)
+		//gravity drop
 
-		//apply gravity drop
-		interval := float64(time.Second.Milliseconds()) / float64(tick)
-		ps.accumulator += interval
-
-		if ps.accumulator >= float64(ps.dropSpeed) {
-			if ps.isCommitting {
-				//check
-				landingRow := FindLandingPosition(ps.board, ps.block.shape, ps.cRow, ps.cCol)
+		if !ps.onGround {
+			ps.gravityTimer += INTERVAL
+			if ps.gravityTimer >= float64(ps.dropSpeed) {
 				if ps.cRow < landingRow {
-					ps.isCommitting = false
-					ps.dropSpeed = DROPSPEED
-				} else {
-					placeBlock(state, ps, ps.block.shape, ps.cRow, ps.cCol)
-					ps.accumulator = 0 //reset accumulator after commit block
-
-					continue
-				}
-
-			} else {
-				ps.accumulator -= float64(ps.dropSpeed)
-				landingRow := FindLandingPosition(ps.board, ps.block.shape, ps.cRow, ps.cCol)
-
-				if ps.cRow >= landingRow {
-					ps.isCommitting = true
-					ps.dropSpeed = LOCKDELAY
-
-				} else { //if no conditions are satisfied -> drop piece\
 					ps.cRow++
+					ps.gravityTimer -= float64(ps.dropSpeed)
+				}
+				if ps.cRow >= landingRow {
+					ps.onGround = true
+				}
+			}
+		} else {
+			ps.lockTimer += INTERVAL
+		}
+		//commit phase:
+		if ps.onGround {
+			if ps.cRow < landingRow {
+				ps.onGround = false
+				ps.lockTimer = 0
+
+			}
+			if ps.lockTimer >= LOCKDELAY {
+				placeBlock(state, ps, ps.block.shape, landingRow, ps.cCol)
+				//clear lines then reset timer spawn new piece(block)
+				lines := clearLines(ps.board)
+				if lines > 0 {
+					//TODO
+				}
+				spawnNewPiece(state, ps)
+				//check game over
+				if CheckGameOver(ps.board, ps.block.shape) {
+					return errors.New("game over")
 				}
 			}
 		}
+		f.Forward()
 	}
 
 	return nil
 }
 
-// record inputs store input event correspond serverFrame # and  server
-func (state *GameState) recordInputs(playerId string, inputs []Input, latestFrame int) {
-	//ghi nhận lại input và kể cả serverFrame ko có input của client => để server biết được cần phải update state tới serverFrame
+// record inputs store inputBuffer event correspond serverFrame # and  server
+func (state *GameState) recordInputs(playerId string, inputs []Input, latestFrame int, broadcast chan Packet) {
+	//ghi nhận lại inputBuffer và kể cả serverFrame ko có inputBuffer của client => để server biết được cần phải update state tới serverFrame
 	//nào
-	state.mu.Lock()
+	var packet Packet
+	msg := NewMessage("input-server")
 	fqueue := state.frames[playerId]
+	fqueue.mu.Lock()
+	defer fqueue.mu.Unlock()
 	for _, input := range inputs {
-		state.inputCounter++
-		fmt.Println(state.inputCounter)
+
+		serverConfirmedKeys := []string{}
 		frame := input.Frame
-		key_event := input.Key
-		ps, err := fqueue.PlayerStateOfFrame(frame)
+		keys := input.Keys
+		ps, err := fqueue.Get(frame)
 		if err != nil {
-			log.Printf("fail to get serverFrame:%d \n", frame)
+			if frame < state.curFrame {
+				log.Printf("Input at frame %d arrived late — skip. Current server frame: %d", frame, state.curFrame)
+			}
+
+			if errors.Is(err, ErrOutOfRange) {
+				log.Printf("invalid frame counter:%d something wrong \n", frame)
+			}
+			//TODO sync clock message here
 			return
 		}
 		if ps == nil {
-			log.Printf("serverFrame %d : nil player state, something went wrong!\n", frame)
+			log.Printf("frame %d : nil player state, something went wrong!\n", frame)
 			return
 		}
-		if frame < state.curFrame {
-			log.Printf("Input at frame %d arrived late — skippe. Current server frame: %d", frame, state.curFrame)
-			continue
+
+		ps.inputBuffer = InputBuffer{}
+		for _, key_event := range keys {
+			ps.inputBuffer[key(key_event)] = true
 		}
-		ps.input[key(key_event)] = true
+		for k, v := range ps.inputBuffer {
+			if v == true {
+				serverConfirmedKeys = append(serverConfirmedKeys, string(k))
+			}
+		}
+
+		if len(serverConfirmedKeys) > 0 {
+			msg.Payload.Inputs = append(msg.Payload.Inputs, Input{Frame: frame, Keys: serverConfirmedKeys})
+		}
 
 	}
-	state.curFrame = latestFrame
 
+	state.mu.Lock()
+	state.curFrame = latestFrame
 	state.mu.Unlock()
+	if len(msg.Payload.Inputs) > 0 {
+		packet.body = MarshalMessage(msg)
+		broadcast <- packet
+	}
 
 }
 func (state *GameState) InitFrameQueue(playerId string) {
