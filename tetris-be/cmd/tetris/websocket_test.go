@@ -22,7 +22,7 @@ func TestWebsocketConnection(t *testing.T) {
 		response := httptest.NewRecorder()
 		server.ServeHTTP(response, req)
 
-		totalPlayers := len(stubRoomManager.Rooms[roomID].Players)
+		totalPlayers := len(stubRoomManager.Rooms[roomID].PlayerConns)
 		if totalPlayers == 0 {
 			t.Errorf("got %d want 1", totalPlayers)
 		}

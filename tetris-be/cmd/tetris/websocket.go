@@ -30,22 +30,26 @@ func serveWs(roomManager game.RoomManager) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		roomID := readString(r.URL.Query(), "roomid", "")
 		playerID := readString(r.URL.Query(), "playerid", "")
-		roomManager.CreateMockRoom(roomID) //test only should delete this room id = ABC12
+		//TODO validate params
+		err := roomManager.CreateMockRoom(roomID)
+		if err != nil {
+			return
+		} //test only should delete this room id = ABC12
 		room, err := roomManager.Get(roomID)
 		if err != nil {
 			notFoundResponse(w, r)
 			return
 		}
-		//upgrade sau error để trả http response, sau khi upgrade thành công ws conn không sửa header dc nữa.
+		//upgrade sau error để trả http response, sau khi upgrade thành công ws conn ko sửa header dc nữa.
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
 			serverErrorResponse(w, r, err)
 			return
 		}
-		player := game.NewPlayerConn(playerID, room, conn)
-		roomManager.AddPlayer(player)
+		playerConn := game.NewPlayerConn(playerID, room, conn)
+		roomManager.AddPlayer(playerConn)
 
-		go player.Read()
-		go player.Write()
+		go playerConn.Read()
+		go playerConn.Write()
 	})
 }

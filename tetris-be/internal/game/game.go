@@ -2,96 +2,38 @@ package game
 
 import (
 	"errors"
+	"fmt"
 	"log"
 	"sync"
 	"time"
 )
 
-type GameState struct {
-	frames map[string]*FrameQueue // map key : player id
+type Game struct {
+	players     map[string]*FrameExecutor
+	isPlaying   bool
+	delayBuffer int //fixed value, refactor later
+}
+type FrameExecutor struct {
+	playerId string
+	gl       *GameLoop
+	frames   *FrameQueue
 	/*
-		If the gap between curFrame and gl.serverFrame becomes large because the client hasn't sent periodic
+		If the gap between curFrame and gl.tickFrame becomes large because the client hasn't sent periodic
 		updates—  the server will auto simulate the frames state for that duration.
 	*/
-	curFrame  int //lastest confirmed serverFrame, if diff from curFrame and gl.serverFrame
+	netFrame  int //last frame received from client
 	listBlock []int
+	opponentC chan Attack
 	mu        sync.Mutex
 }
 
-func NewGameState() *GameState {
-	return &GameState{
-		frames:    make(map[string]*FrameQueue),
-		curFrame:  0,
+func NewFrameExecutor(playerId string) *FrameExecutor {
+	return &FrameExecutor{
+		playerId:  playerId,
+		frames:    NewQueue(QUEUE_SIZE),
+		netFrame:  0,
 		listBlock: make([]int, 0),
 	}
-}
-
-type PlayerState struct {
-	board [][]int
-
-	blockIndex   int
-	block        Block
-	holdBlock    int //1->7 convert to Block : Tetromino[int]
-	cRow         int
-	cCol         int
-	canHold      bool
-	dropSpeed    float64
-	inputBuffer  InputBuffer // map fat pointer
-	gravityTimer float64
-	lockTimer    float64
-	onGround     bool
-	/*
-	 combo int
-	 backToBack string
-	 shield int
-	*/
-}
-
-func NewPlayerState(board [][]int, blockIndex int, block Block, holdBlock int, cRow, cCol int, canHold bool,
-	dropSpeed float64, input InputBuffer, accumulator float64, onGround bool) *PlayerState {
-	return &PlayerState{
-		board:        board,
-		blockIndex:   blockIndex,
-		block:        block,
-		holdBlock:    holdBlock, //0 is empty value
-		cRow:         cRow,
-		cCol:         cCol,
-		canHold:      canHold,
-		dropSpeed:    dropSpeed,
-		inputBuffer:  input,
-		gravityTimer: accumulator,
-		onGround:     onGround,
-	}
-}
-func NewDefaultPlayerState() *PlayerState {
-	return &PlayerState{
-		board:       CreateEmptyBoard(),
-		canHold:     true,
-		dropSpeed:   DROPSPEED,
-		inputBuffer: make(InputBuffer),
-	}
-}
-
-type key string
-
-const (
-	down     key = "down"
-	downOff  key = "downOff"
-	left     key = "left"
-	right    key = "right"
-	rotate   key = "rotate" //arrow up
-	rrotate  key = "rrotate"
-	spacebar key = "space"
-	hold     key = "hold"
-)
-
-type InputBuffer map[key]bool
-type Game struct {
-	gl        *GameLoop
-	state     *GameState
-	isPlaying bool
-
-	delayBuffer int //fixed value, refactor it later
 }
 
 var ErrGameOver = errors.New("game over")
@@ -99,39 +41,73 @@ var ErrOutOfRange = errors.New("out of range")
 
 func NewGame() *Game {
 	return &Game{
-		state:       NewGameState(),
+		players:     map[string]*FrameExecutor{},
 		isPlaying:   false,
 		delayBuffer: 4, //2 frames
 
 	}
 }
+func (g *Game) Rematch() {
+	//TODO gọi lại Init -> start lại match mới
+}
+func (g *Game) Init(broadcast chan Packet, conns map[string]*PlayerConn, sender string) {
+	playerCount := 0
+	for playerId, conn := range conns {
+		g.players[playerId] = NewFrameExecutor(playerId)
+		if conn != nil {
+			playerCount++
+		}
+	}
+	if playerCount < 2 {
+		var packet Packet
+		body := NewMessage("start")
+		body.Error = "cannot start"
+		packet.body = MarshalMessage(body)
+		packet.directId = sender
+		broadcast <- packet
 
-func (g *Game) Init(playerId string, msg Message, broadcast chan Packet) {
+		return
+	}
+
 	//init data for game state: list block for player
-	g.state.listBlock = GenerateList_7bag(g.state.listBlock, 1000)
-	list := g.state.listBlock
-	body := NewMessage("start")
+	for pId, exec := range g.players {
+		exec.listBlock = GenerateList_7bag(exec.listBlock, 1000)
+		exec.gl = NewGameLoop(exec.onUpdate, exec.recordInputs, exec.receiveGarbage)
+		list := exec.listBlock
+		body := NewMessage("start")
+		body.Payload.ListBlock = list
+		var packet Packet
+		packet.directId = pId
+
+		packet.body = MarshalMessage(body)
+
+		broadcast <- packet
+	}
+outer:
+	for p1, exec := range g.players {
+		for p2, exec2 := range g.players {
+			if p1 != p2 {
+				exec.opponentC = exec2.gl.attacked
+				exec2.opponentC = exec.gl.attacked
+				break outer
+			}
+		}
+	}
 	//startTime := time.Now().Add(time.Second * 2).UnixMilli()
 	//body.Payload.StartAt = startTime
-	//init first state at serverFrame 0
-	g.state.InitFrameQueue(playerId)
-	body.Payload.ListBlock = list
-	var packet Packet
-	g.gl = NewGameLoop(playerId, g.onUpdate)
-
-	packet.body = MarshalMessage(body)
-
-	broadcast <- packet
+	//init first state at tickFrame 0
 
 }
-func (g *Game) StartGame(playerId string, broadcast chan Packet) {
-	list := g.state.listBlock
-	firstState := NewPlayerState(CreateEmptyBoard(), 0, Tetromino[list[0]], 0, 0, 4, true, DROPSPEED,
-		make(InputBuffer), 0, false)
-	g.state.frames[playerId].data[0] = firstState
-	g.state.curFrame = 1
+func (g *Game) StartGame(broadcast chan Packet) {
+	for _, exec := range g.players {
+		list := exec.listBlock
+		firstState := NewBoardState(CreateEmptyBoard(), 0, Tetromino[list[0]], 0, 0, 4, true, DROPSPEED,
+			make(InputBuffer), 0, false)
+		exec.frames.data[0] = firstState
+		exec.netFrame = 1
+		go exec.gl.Run(broadcast)
+	}
 
-	go g.gl.Run(broadcast)
 }
 func (g *Game) computeDelayBuffer(msg Message, broadcast chan Packet) {
 	msg.Type = "ping"
@@ -140,114 +116,167 @@ func (g *Game) computeDelayBuffer(msg Message, broadcast chan Packet) {
 	msg.Timestamp = now
 	broadcast <- packet
 }
-func (g *Game) onUpdate(playerId string, broadcast chan Packet) {
-	frameQueue := g.state.frames[playerId]
-	//update current serverFrame if client inactive in sending messages
-	g.state.mu.Lock()
-	if g.state.curFrame+4 < g.gl.serverFrame {
-		g.state.curFrame++
-	}
+func (exec *FrameExecutor) onUpdate(broadcast chan Packet) {
+	frameQueue := exec.frames
+	//update current tickFrame if client inactive in sending messages
 
-	g.state.mu.Unlock()
-
-	//update serverFrame depends on state.curFrame
-	err := g.state.computeBatchFrames(frameQueue.pFrame+1, g.state.curFrame, playerId) //
-	if err == ErrGameOver {
-		g.Stop()
-		//TODO send game over message
+	if exec.netFrame+4 < exec.gl.tickFrame {
+		exec.netFrame++
 	}
-	if g.gl.serverFrame%3 == 0 {
-		msg := NewMessage("opponent") //temp type
+	//update tickFrame depends on state.curFrame
+	err := exec.computeBatchFrames(frameQueue.simFrame+1, exec.netFrame, broadcast) //
+	if errors.Is(err, ErrGameOver) {
+		//todo stop cho cả 2 players
+		exec.Stop()
 		var packet Packet
-		ps, err := frameQueue.Get(frameQueue.pFrame)
-		if err != nil || ps == nil {
-			log.Printf("something wrong with PlayerState %s\n", err.Error())
-		}
-		msg.Payload.BoardState = BoardState{ps.board, ps.block.shape, ps.cRow, ps.cCol}
-		msg.Payload.LatestFrame = frameQueue.pFrame
-
+		msg := NewMessage("gameover")
+		msg.PlayerId = "winner id"
 		packet.body = MarshalMessage(msg)
 		broadcast <- packet
-
+	}
+	if exec.gl.tickFrame%3 == 0 {
+		msg := NewMessage("opponent") //temp type
+		var packet Packet
+		ps, err := frameQueue.Get(frameQueue.simFrame)
+		if err != nil || ps == nil {
+			log.Printf("something wrong with BoardState %s\n", err.Error())
+		}
+		msg.Payload.BoardState = BoardStateDTO{ps.board, ps.block.shape, ps.cRow, ps.cCol}
+		msg.Payload.LatestFrame = frameQueue.simFrame
+		packet.excludeId = exec.playerId
+		packet.body = MarshalMessage(msg)
+		broadcast <- packet
 	}
 
 }
 
-func (state *GameState) computeBatchFrames(fromFrame, toFrame int, playerId string) error {
+func (exec *FrameExecutor) computeBatchFrames(fromFrame, toFrame int, broadcast chan Packet) error {
 
-	f := state.frames[playerId] // frame queue
+	fq := exec.frames // frame queue
 
 	if fromFrame > toFrame {
 		return nil
 	}
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	for i := fromFrame; i <= toFrame; i++ {
+
+	for frame := fromFrame; frame <= toFrame; frame++ {
 
 		//TODO log all frames inputBuffer here for deterministic replay
-		ps, _ := f.Get(i)
-		previous, _ := f.Get(i - 1)
-		propagateState(previous, ps)
+		bs, _ := fq.Get(frame)
+		previous, _ := fq.Get(frame - 1)
+		PropagateState(previous, bs)
+		//apply garbage
+		//ps.cRow cũng sẽ bị đẩy lên
+		garbage := fq.GetGarbage(frame)
+		bs.cancel = min(fq.GetCancel(frame)+bs.cancel, 0)
+		if garbage > 0 {
+			garbage, bs.cancel = max(garbage+bs.cancel, 0), min(bs.cancel+garbage, 0)
+			fmt.Printf("[%s] receive %d garbage lines at frame: %d \n", exec.playerId, garbage, frame)
+			TakeGarbage(garbage, bs.board)
+			bs.cRow = max(1, bs.cRow-garbage)
+			if garbage > 0 {
+				msg := NewMessage("garbage-sync")
+				var packet Packet
+				msg.Payload.BoardState = BoardStateDTO{bs.board, bs.block.shape, bs.cRow, bs.cCol}
+				msg.Payload.LatestFrame = frame - 1
+				packet.directId = exec.playerId
+				packet.body = MarshalMessage(msg)
+				broadcast <- packet
 
-		//TODO check logic queue head
-		//apply inputBuffer
-		input := ps.inputBuffer
-		if len(input) > 0 {
-			applyInputBuffer(state, ps, input)
+			}
+
+			if CheckGameOver(bs.board, bs.block.shape, bs.cRow, bs.cCol) {
+				return errors.New("game over")
+			}
 		}
-		landingRow := FindLandingPosition(ps.board, ps.block.shape, ps.cRow, ps.cCol)
+		//apply input
+		input := bs.inputBuffer
+		hasSpin := input[rotate] || input[rrotate]
+		if len(input) > 0 {
+			ApplyInputBuffer(exec.listBlock, bs, input)
+		}
+		//clean Input buffer
+		bs.inputBuffer = InputBuffer{}
+		landingRow := FindLandingPosition(bs.board, bs.block.shape, bs.cRow, bs.cCol)
 		//gravity drop
 
-		if !ps.onGround {
-			ps.gravityTimer += INTERVAL
-			if ps.gravityTimer >= float64(ps.dropSpeed) {
-				if ps.cRow < landingRow {
-					ps.cRow++
-					ps.gravityTimer -= float64(ps.dropSpeed)
+		if !bs.onGround {
+			bs.gravityTimer += INTERVAL
+			if bs.gravityTimer >= float64(bs.dropSpeed) {
+				if bs.cRow < landingRow {
+					bs.cRow++
+					bs.gravityTimer -= float64(bs.dropSpeed)
 				}
-				if ps.cRow >= landingRow {
-					ps.onGround = true
+				if bs.cRow >= landingRow {
+					bs.onGround = true
 				}
 			}
 		} else {
-			ps.lockTimer += INTERVAL
+			bs.lockTimer += INTERVAL
 		}
 		//commit phase:
-		if ps.onGround {
-			if ps.cRow < landingRow {
-				ps.onGround = false
-				ps.lockTimer = 0
+		if bs.onGround {
+			if bs.cRow < landingRow {
+				bs.onGround = false
+				bs.lockTimer = 0
 
 			}
-			if ps.lockTimer >= LOCKDELAY {
-				placeBlock(state, ps, ps.block.shape, landingRow, ps.cCol)
+			if bs.lockTimer >= LOCKDELAY {
+				PlaceBlock(bs.board, bs.block.shape, bs.cRow, bs.cCol)
 				//clear lines then reset timer spawn new piece(block)
-				lines := clearLines(ps.board)
-				if lines > 0 {
-					//TODO
+				lines := ClearLines(bs.board)
+				b2bType := "none"
+				if hasSpin {
+					b2bType = fmt.Sprintf("spin-%t:%d", hasSpin, lines)
 				}
-				spawnNewPiece(state, ps)
+				if lines == 4 {
+					b2bType = "clear4"
+				}
+
+				if bs.b2b != b2bType {
+					bs.b2b = b2bType
+				}
+				if lines > 0 {
+					perfect := isPerfect(bs.board)
+					b2bFlag := (bs.b2b == b2bType) && (bs.b2b != "none")
+					bs.b2b = b2bType
+					garbageSent := CalculateGarbageRows(lines, hasSpin, bs.combo, b2bFlag, perfect)
+					bs.send += garbageSent
+					fq.CancelGarbage(frame, garbageSent)
+					bs.combo++
+				} else {
+					bs.b2b = "none"
+					bs.combo = 0
+					//TODO combo-end here starting send garbage (delay in 45 frame from this frame )
+					// send message to client
+					if bs.send > 0 {
+						fmt.Printf("[%s] send garbage at frame: %d \n", exec.playerId, frame)
+						exec.opponentC <- Attack{lines: bs.send, atFrame: frame}
+					}
+					bs.send = 0
+				}
+
+				SpawnNewPiece(exec.listBlock, bs)
 				//check game over
-				if CheckGameOver(ps.board, ps.block.shape) {
+				if CheckGameOver(bs.board, bs.block.shape, bs.cRow, bs.cCol) {
 					return errors.New("game over")
 				}
 			}
 		}
-		f.Forward()
+
+		fq.Forward()
 	}
 
 	return nil
 }
 
-// record inputs store inputBuffer event correspond serverFrame # and  server
-func (state *GameState) recordInputs(playerId string, inputs []Input, latestFrame int, broadcast chan Packet) {
-	//ghi nhận lại inputBuffer và kể cả serverFrame ko có inputBuffer của client => để server biết được cần phải update state tới serverFrame
-	//nào
+// record inputs store inputBuffer event correspond tickFrame # and  server
+func (exec *FrameExecutor) recordInputs(inputs []Input, latestFrame int, broadcast chan Packet) {
+	//ghi nhận lại inputBuffer và kể cả tickFrame ko có inputBuffer của client
+	//=> để server biết được cần phải update state tới tickFrame nào
 	var packet Packet
 	msg := NewMessage("input-server")
-	fqueue := state.frames[playerId]
-	fqueue.mu.Lock()
-	defer fqueue.mu.Unlock()
+	fqueue := exec.frames
+
 	for _, input := range inputs {
 
 		serverConfirmedKeys := []string{}
@@ -255,8 +284,8 @@ func (state *GameState) recordInputs(playerId string, inputs []Input, latestFram
 		keys := input.Keys
 		ps, err := fqueue.Get(frame)
 		if err != nil {
-			if frame < state.curFrame {
-				log.Printf("Input at frame %d arrived late — skip. Current server frame: %d", frame, state.curFrame)
+			if frame < exec.netFrame {
+				//log.Printf("Input at frame %d arrived late — skip. Current server frame: %d", frame, exec.netFrame)
 			}
 
 			if errors.Is(err, ErrOutOfRange) {
@@ -286,24 +315,29 @@ func (state *GameState) recordInputs(playerId string, inputs []Input, latestFram
 
 	}
 
-	state.mu.Lock()
-	state.curFrame = latestFrame
-	state.mu.Unlock()
+	exec.mu.Lock()
+	exec.netFrame = latestFrame
+	exec.mu.Unlock()
 	if len(msg.Payload.Inputs) > 0 {
 		packet.body = MarshalMessage(msg)
 		broadcast <- packet
 	}
 
 }
-func (state *GameState) InitFrameQueue(playerId string) {
-	state.frames[playerId] = NewQueue(QUEUE_SIZE)
+func (exec *FrameExecutor) receiveGarbage(atk Attack) {
+	exec.frames.GarbageUpcoming(atk.atFrame, atk.lines)
 }
 func (g *Game) Pause() {
-	g.gl.pause <- struct{}{}
+	for _, exec := range g.players {
+		exec.gl.pause <- struct{}{}
+	}
+
 }
 func (g *Game) Unpause() {
-	g.gl.resume <- struct{}{}
+	for _, exec := range g.players {
+		exec.gl.resume <- struct{}{}
+	}
 }
-func (g *Game) Stop() {
-	g.gl.quit <- struct{}{}
+func (exec *FrameExecutor) Stop() {
+	exec.gl.quit <- struct{}{}
 }

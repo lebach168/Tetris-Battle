@@ -49,8 +49,8 @@ package game
 //		case msg, ok := <-p.outbound:
 //			_ = p.conn.SetWriteDeadline(time.Now().Add(writeWait))
 //			if !ok {
-//				// channel đóng: gửi close serverFrame
-//				log.Printf("[ws][%s] outbound closed -> send close serverFrame", p.id)
+//				// channel đóng: gửi close tickFrame
+//				log.Printf("[ws][%s] outbound closed -> send close tickFrame", p.id)
 //				_ = p.conn.WriteMessage(websocket.CloseMessage, []byte{})
 //				return
 //			}

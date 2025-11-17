@@ -134,22 +134,22 @@ func newStubRoomManager() *game.InMemoryRoomManager {
 		{
 			ID:  "ABC12",
 			Key: "key-1",
-			Players: map[*game.PlayerConn]bool{
+			PlayerConns: map[*game.PlayerConn]bool{
 				{ID: "anon123"}: true,
 			},
 		},
 		{
 			ID:  "DEF34",
 			Key: "key-2",
-			Players: map[*game.PlayerConn]bool{
+			PlayerConns: map[*game.PlayerConn]bool{
 				{ID: "player-2"}: true,
 				{ID: "player-3"}: true,
 			},
 		},
 		{
-			ID:      "XYZ00",
-			Key:     "key-3",
-			Players: make(map[*game.PlayerConn]bool), // empty room
+			ID:          "XYZ00",
+			Key:         "key-3",
+			PlayerConns: make(map[*game.PlayerConn]bool), // empty room
 		},
 	}
 	for _, room := range rooms {

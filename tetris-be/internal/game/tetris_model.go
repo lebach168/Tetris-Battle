@@ -12,6 +12,7 @@ const LOCKDELAY float64 = 300
 const DROPSPEED float64 = 800
 const QUEUE_SIZE = 100
 const TICK = 30
+const INCOMING = 45
 
 var INTERVAL = float64(time.Second.Milliseconds()) / float64(time.Duration(TICK))
 
@@ -27,47 +28,49 @@ var Tetromino = map[int]Block{
 	},
 	2: { //O
 		shape: [][]int{
-			{1, 1},
-			{1, 1},
+			{2, 2},
+			{2, 2},
 		},
 		form: 0,
 	},
 	3: { //T
 		shape: [][]int{
-			{0, 1, 0},
-			{1, 1, 1},
-			{0, 0, 0},
-		},
-		form: 0,
-	},
-	4: { //S
-		shape: [][]int{
-			{0, 2, 2},
-			{2, 2, 0},
-			{0, 0, 0},
-		},
-		form: 0,
-	},
-	5: { //Z
-		shape: [][]int{
-			{3, 3, 0},
-			{0, 3, 3},
-			{0, 0, 0},
-		},
-		form: 0,
-	},
-	6: { //J
-		shape: [][]int{
-			{2, 0, 0},
-			{2, 2, 2},
-			{0, 0, 0},
-		},
-		form: 0,
-	},
-	7: { //L
-		shape: [][]int{
-			{0, 0, 3},
+			{0, 3, 0},
 			{3, 3, 3},
+			{0, 0, 0},
+		},
+		form: 0,
+	},
+
+	4: { //Z
+		shape: [][]int{
+			{4, 4, 0},
+			{0, 4, 4},
+			{0, 0, 0},
+		},
+		form: 0,
+	},
+
+	5: { //L
+		shape: [][]int{
+			{0, 0, 5},
+			{5, 5, 5},
+			{0, 0, 0},
+		},
+		form: 0,
+	},
+	6: { //S
+		shape: [][]int{
+			{0, 6, 6},
+			{6, 6, 0},
+			{0, 0, 0},
+		},
+		form: 0,
+	},
+	7: { //J
+		shape: [][]int{
+			{7, 0, 0},
+			{7, 7, 7},
 			{0, 0, 0},
 		},
 		form: 0,
@@ -75,7 +78,7 @@ var Tetromino = map[int]Block{
 }
 
 var ReverseTetrominoMap = map[int]string{
-	1: "I", 2: "O", 3: "T", 4: "S", 5: "Z", 6: "J", 7: "L",
+	1: "I", 2: "O", 3: "T", 4: "Z", 5: "L", 6: "S", 7: "J",
 }
 
 type Block struct {
@@ -127,4 +130,29 @@ func GetWallKickData(size int, fromShape, toShape int) KickOffsets {
 		return WallKickI[k]
 	}
 	return WallKickJLSTZ[k]
+}
+func CalculateGarbageRows(lines int, hasSpin bool, combo int, b2b bool, perfect bool) int {
+	base := lines - 1
+	bonus := 0
+	if lines == 0 {
+		return 0
+	}
+
+	if combo > 0 {
+		bonus += 1
+	}
+	if hasSpin {
+		bonus += 2
+	}
+	if b2b {
+		if hasSpin {
+			bonus += 3
+		} else {
+			bonus += 2
+		}
+	}
+	if perfect {
+		base += 4
+	}
+	return base + bonus
 }

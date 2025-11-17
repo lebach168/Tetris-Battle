@@ -9,20 +9,21 @@ import (
 const letters = "abcdefghijklmnopqrstxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
 type Room struct {
-	ID        string
-	Key       string
-	Players   map[string]*PlayerConn // map[playerId] *PlayerConn
-	join      chan *PlayerConn
-	leave     chan *PlayerConn
-	broadcast chan Packet
-	game      *Game
+	ID          string
+	Key         string
+	PlayerConns map[string]*PlayerConn // map[playerId] *PlayerConn
+	join        chan *PlayerConn
+	leave       chan *PlayerConn
+	broadcast   chan Packet
+	game        *Game
 
 	stop          chan struct{}
 	callbackClose func()
 }
 
 type Packet struct {
-	excludeID string
+	directId  string //direct message to playerid
+	excludeId string // broadcast all exclude playerid // else this field and directid empty then broadcast all
 	body      []byte
 }
 
@@ -32,20 +33,28 @@ func (r *Room) listenAndServe() {
 	for {
 		select {
 		case pConn := <-r.join:
-			r.Players[pConn.ID] = pConn
-			log.Printf("[ws][room:%s] num players: %v ", r.ID, len(r.Players))
+			r.PlayerConns[pConn.ID] = pConn
+			log.Printf("[ws][room:%s] %s joined, num players: %v ", r.ID, pConn.ID, len(r.PlayerConns))
+
 			//fmt.Println(player.ID)//for debug
-		case player := <-r.leave:
-			if conn, ok := r.Players[player.ID]; ok && conn != nil {
-				delete(r.Players, player.ID)
-				close(player.send)
+		case playerConn := <-r.leave:
+			if conn, ok := r.PlayerConns[playerConn.ID]; ok && playerConn == conn && conn != nil {
+				delete(r.PlayerConns, playerConn.ID)
+				if len(r.PlayerConns) == 0 {
+					close(r.stop)
+				}
 			}
-			if len(r.Players) == 0 {
-				close(r.stop)
+			if playerConn != nil {
+				close(playerConn.send)
 			}
+
 		case msg := <-r.broadcast:
-			for _, pConn := range r.Players {
-				if pConn.ID == msg.excludeID {
+			for _, pConn := range r.PlayerConns {
+				if msg.directId != "" {
+					if pConn.ID != msg.directId {
+						continue
+					}
+				} else if pConn.ID == msg.excludeId {
 					continue
 				}
 				select {
@@ -53,7 +62,7 @@ func (r *Room) listenAndServe() {
 				default: //send channel is blocked
 					log.Printf("Drop message for %s: outbound full", pConn.ID)
 					close(pConn.send)
-					delete(r.Players, pConn.ID)
+					delete(r.PlayerConns, pConn.ID)
 				}
 
 			}
@@ -78,7 +87,7 @@ func NewRoom(roomID, key string, close func()) *Room {
 	return &Room{
 		ID:            roomID,
 		Key:           key,
-		Players:       make(map[string]*PlayerConn),
+		PlayerConns:   make(map[string]*PlayerConn),
 		join:          make(chan *PlayerConn),
 		leave:         make(chan *PlayerConn),
 		broadcast:     make(chan Packet, 32),

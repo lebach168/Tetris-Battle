@@ -6,6 +6,69 @@ import (
 	"math/rand"
 )
 
+type BoardState struct {
+	board [][]int
+
+	blockIndex   int
+	block        Block
+	holdBlock    int //1->7 convert to Block : Tetromino[int]
+	cRow         int
+	cCol         int
+	canHold      bool
+	dropSpeed    float64
+	inputBuffer  InputBuffer // map-fat pointer
+	gravityTimer float64
+	lockTimer    float64
+	onGround     bool
+
+	//for attack mechanism
+	combo  int
+	b2b    string //back to back
+	send   int
+	cancel int
+}
+
+func NewBoardState(board [][]int, blockIndex int, block Block, holdBlock int, cRow, cCol int, canHold bool,
+	dropSpeed float64, input InputBuffer, accumulator float64, onGround bool) *BoardState {
+	return &BoardState{
+		board:        board,
+		blockIndex:   blockIndex,
+		block:        block,
+		holdBlock:    holdBlock, //0 is empty value
+		cRow:         cRow,
+		cCol:         cCol,
+		canHold:      canHold,
+		dropSpeed:    dropSpeed,
+		inputBuffer:  input,
+		gravityTimer: accumulator,
+		onGround:     onGround,
+		combo:        0,
+	}
+}
+func NewDefaultBoardState() *BoardState {
+	return &BoardState{
+		board:       CreateEmptyBoard(),
+		canHold:     true,
+		dropSpeed:   DROPSPEED,
+		inputBuffer: make(InputBuffer),
+	}
+}
+
+type key string
+
+const (
+	down     key = "down"
+	downOff  key = "downOff"
+	left     key = "left"
+	right    key = "right"
+	rotate   key = "rotate" //arrow up
+	rrotate  key = "rrotate"
+	spacebar key = "space"
+	hold     key = "hold"
+)
+
+type InputBuffer map[key]bool
+
 func ComputeDropSpeed(level int) int {
 	if level == 0 {
 		return 800
@@ -33,7 +96,7 @@ func GenerateList_7bag(list []int, n int) []int {
 }
 func GenerateList_Classic(list []int, n int) []int {
 	extend := make([]int, n)
-	for i, _ := range extend {
+	for i := range extend {
 		extend[i] = rand.Intn(7) + 1
 	}
 	list = append(list, extend...)
@@ -131,18 +194,15 @@ func FindLandingPosition(board [][]int, block [][]int, row, col int) int {
 	return landingRow
 }
 
-func CheckGameOver(board [][]int, nextBlock [][]int) bool {
-	if hasCollision(board, nextBlock, 0, 4) {
+func CheckGameOver(board [][]int, block [][]int, cRow, cCol int) bool {
+	if hasCollision(board, block, cRow, cCol) {
 		return true
 	}
 	return false
 }
 
-type SpecialMove struct {
-}
-
-// clearLines return number of rows has cleared and update board after applied board
-func clearLines(board [][]int) int {
+// ClearLines return number of rows has cleared and update board after applied board
+func ClearLines(board [][]int) int {
 	var newBoard [][]int
 	cleared := 0
 
@@ -155,6 +215,7 @@ func clearLines(board [][]int) int {
 			}
 		}
 		if !full {
+			//Todo: potential bug
 			newBoard = append(newBoard, row)
 		} else {
 			cleared++
@@ -176,50 +237,55 @@ func clearLines(board [][]int) int {
 
 	return cleared
 }
-func placeBlock(gs *GameState, ps *PlayerState, block [][]int, row, col int) {
+func PlaceBlock(board [][]int, block [][]int, row, col int) {
 	//fmt.Printf("place block row:%v col:%v\n block:%v\n", row, col, block)
 	for i := range block {
 		for j := range block[i] {
 			if block[i][j] != 0 {
-				ps.board[row+i][col+j] = block[i][j]
+				board[row+i][col+j] = block[i][j]
 			}
 		}
 	}
 
 }
-func propagateState(previous *PlayerState, ps *PlayerState) {
-	ps.board = copySlice(previous.board)
-	ps.dropSpeed = previous.dropSpeed
-	ps.cRow = previous.cRow
-	ps.cCol = previous.cCol
-	ps.gravityTimer = previous.gravityTimer
-	ps.lockTimer = previous.lockTimer
-	ps.block = previous.block
-	ps.canHold = previous.canHold
-	ps.onGround = previous.onGround
-	ps.blockIndex = previous.blockIndex
-	ps.holdBlock = previous.holdBlock
+func PropagateState(previous *BoardState, bs *BoardState) {
+	bs.board = copySlice(previous.board)
+	bs.dropSpeed = previous.dropSpeed
+	bs.cRow = previous.cRow
+	bs.cCol = previous.cCol
+	bs.gravityTimer = previous.gravityTimer
+	bs.lockTimer = previous.lockTimer
+	bs.block = previous.block
+	bs.canHold = previous.canHold
+	bs.onGround = previous.onGround
+	bs.blockIndex = previous.blockIndex
+	bs.holdBlock = previous.holdBlock
+
+	bs.combo = previous.combo
+	bs.send = previous.send
+	bs.cancel = previous.cancel
 }
-func applyInputBuffer(state *GameState, ps *PlayerState, input InputBuffer) {
+
+func ApplyInputBuffer(listBlock []int, bs *BoardState, input InputBuffer) {
 	// Order apply: Horizontal move -> Rotate -> Vertical drop -> Hold -> hard drop last
 	// Horizontal moves (left/right)
 	if input[left] {
-		ps.cCol--
-		if hasCollision(ps.board, ps.block.shape, ps.cRow, ps.cCol) {
-			ps.cCol++ // Revert
+		bs.cCol--
+		if hasCollision(bs.board, bs.block.shape, bs.cRow, bs.cCol) {
+			bs.cCol++ // Revert
 		}
 	}
 	if input[right] {
-		ps.cCol++
-		if hasCollision(ps.board, ps.block.shape, ps.cRow, ps.cCol) {
-			ps.cCol-- // Revert
+		bs.cCol++
+		if hasCollision(bs.board, bs.block.shape, bs.cRow, bs.cCol) {
+			bs.cCol-- // Revert
 		}
 	}
 
 	// Rotate (rotate clockwise, rrotate counterclockwise)
 	if input[rotate] || input[rrotate] {
 
-		rotatedShape := copySlice(ps.block.shape)
+		rotatedShape := copySlice(bs.block.shape)
 		x := 1
 		if ok := input[rotate]; ok {
 			rotatedShape = RotateRight(rotatedShape)
@@ -227,23 +293,23 @@ func applyInputBuffer(state *GameState, ps *PlayerState, input InputBuffer) {
 			rotatedShape = RotateLeft(rotatedShape)
 			x = 3 //3 = -1 in modula
 		}
-		form := ps.block.form
+		form := bs.block.form
 		newForm := (form + x) % 4
-		if !hasCollision(ps.board, rotatedShape, ps.cRow, ps.cCol) {
-			ps.block.shape = rotatedShape
-			ps.block.form = newForm
+		if !hasCollision(bs.board, rotatedShape, bs.cRow, bs.cCol) {
+			bs.block.shape = rotatedShape
+			bs.block.form = newForm
 
 		} else {
-			wallkickOffset := GetWallKickData(len(ps.block.shape), form, newForm)
+			wallkickOffset := GetWallKickData(len(bs.block.shape), form, newForm)
 			for _, d := range wallkickOffset {
-				newRow := ps.cRow + d[1]
-				newCol := ps.cCol + d[0]
-				if !hasCollision(ps.board, rotatedShape, newRow, newCol) {
+				newRow := bs.cRow + d[1]
+				newCol := bs.cCol + d[0]
+				if !hasCollision(bs.board, rotatedShape, newRow, newCol) {
 					fmt.Printf("Applying wall kick: dx=%v, dy=%v\n", d[0], d[1])
-					ps.cRow = newRow
-					ps.cCol = newCol
-					ps.block.shape = rotatedShape
-					ps.block.form = newForm
+					bs.cRow = newRow
+					bs.cCol = newCol
+					bs.block.shape = rotatedShape
+					bs.block.form = newForm
 					break
 				}
 			}
@@ -253,40 +319,70 @@ func applyInputBuffer(state *GameState, ps *PlayerState, input InputBuffer) {
 
 	// Vertical moves (down soft drop key down set dropspeed -> 100ms)
 	if input[down] {
-		ps.dropSpeed = SOFT_DROP
+		bs.dropSpeed = SOFT_DROP
 	}
 	if input[downOff] {
-		ps.dropSpeed = DROPSPEED
+		bs.dropSpeed = DROPSPEED
 	}
 
 	// Hold
-	if input[hold] && ps.canHold {
-		holdBlock := state.listBlock[ps.blockIndex]
-		if ps.holdBlock == 0 {
-			ps.blockIndex++
-			ps.block = Tetromino[state.listBlock[ps.blockIndex]]
+	if input[hold] && bs.canHold {
+		holdBlock := listBlock[bs.blockIndex]
+		if bs.holdBlock == 0 {
+			bs.blockIndex++
+			bs.block = Tetromino[listBlock[bs.blockIndex]]
 
 		} else {
-			ps.block = Tetromino[ps.holdBlock]
+			bs.block = Tetromino[bs.holdBlock]
 		}
-		ps.holdBlock = holdBlock
-		ps.cRow = 0
-		ps.cCol = 4
-		ps.canHold = false
+		bs.holdBlock = holdBlock
+		bs.cRow = 0
+		bs.cCol = 4
+		bs.canHold = false
 	}
 	if input[spacebar] {
-		ps.cRow = FindLandingPosition(ps.board, ps.block.shape, ps.cRow, ps.cCol)
-		ps.onGround = true
-		ps.lockTimer = LOCKDELAY
+		bs.cRow = FindLandingPosition(bs.board, bs.block.shape, bs.cRow, bs.cCol)
+		bs.onGround = true
+		bs.lockTimer = LOCKDELAY
 	}
 }
-func spawnNewPiece(state *GameState, ps *PlayerState) {
-	ps.cRow = 0
-	ps.cCol = 4
-	ps.blockIndex++
-	ps.block = Tetromino[state.listBlock[ps.blockIndex]]
-	ps.onGround = false
-	ps.canHold = true
-	ps.lockTimer = 0
-	ps.gravityTimer = 0
+func SpawnNewPiece(listBlock []int, bs *BoardState) {
+	bs.cRow = 0
+	bs.cCol = 4
+	bs.blockIndex++
+	bs.block = Tetromino[listBlock[bs.blockIndex]]
+	bs.onGround = false
+	bs.canHold = true
+	bs.lockTimer = 0
+	bs.gravityTimer = 0
+}
+func isPerfect(board [][]int) bool {
+	for _, row := range board {
+		for _, cell := range row {
+			if cell != 0 {
+				return false
+			}
+		}
+	}
+	return true
+}
+func TakeGarbage(lines int, board [][]int) {
+	if lines == 0 {
+		return
+	}
+	for r := 0; r < BOARD_HEIGHT-lines; r++ {
+		for c := 0; c < BOARD_WIDTH; c++ {
+			board[r][c] = board[r+lines][c]
+		}
+	}
+	emptyCol := rand.Intn(BOARD_WIDTH)
+	// Thêm garbage lines vào dưới cùng
+	for i := 0; i < lines; i++ {
+		row := BOARD_HEIGHT - lines + i
+		for c := 0; c < BOARD_WIDTH; c++ {
+			board[row][c] = 8 // 8: garbage value
+		}
+		board[row][emptyCol] = 0
+	}
+
 }

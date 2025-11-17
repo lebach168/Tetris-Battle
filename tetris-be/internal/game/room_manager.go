@@ -9,9 +9,9 @@ type RoomManager interface {
 	Get(roomID string) (*Room, error)
 	GetAllDTO() ([]RoomDTO, error)
 	CreateRoom(key string) (RoomDTO, error)
-	CreateMockRoom(id string) (RoomDTO, error)
+	CreateMockRoom(id string) error
 	JoinRoom(roomID string, key string) (RoomDTO, error)
-	AddPlayer(p *PlayerConn)
+	AddPlayer(pConn *PlayerConn)
 }
 type InMemoryRoomManager struct {
 	Rooms map[string]*Room
@@ -32,7 +32,7 @@ func (r Room) ToDTO() RoomDTO {
 		ID: r.ID,
 	}
 
-	for _, pConn := range r.Players {
+	for _, pConn := range r.PlayerConns {
 		dto.Players = append(dto.Players, PlayerDTO{ID: pConn.ID})
 	}
 
@@ -89,9 +89,9 @@ func (i *InMemoryRoomManager) CreateRoom(key string) (RoomDTO, error) {
 
 }
 
-func (i *InMemoryRoomManager) CreateMockRoom(id string) (RoomDTO, error) {
+func (i *InMemoryRoomManager) CreateMockRoom(id string) error {
 	if _, ok := i.Rooms[id]; ok {
-		return i.Rooms[id].ToDTO(), nil
+		return nil
 	}
 	i.mu.Lock()
 	closeRoom := func() {
@@ -105,14 +105,14 @@ func (i *InMemoryRoomManager) CreateMockRoom(id string) (RoomDTO, error) {
 	i.mu.Unlock()
 	//unlock before listenAndServe listener goroutine
 	go room.listenAndServe()
-	return room.ToDTO(), nil
-	return RoomDTO{}, fmt.Errorf("server is busy")
+	return nil
+	//return RoomDTO{}, fmt.Errorf("server is busy")
 
 }
-func (i *InMemoryRoomManager) AddPlayer(p *PlayerConn) {
+func (i *InMemoryRoomManager) AddPlayer(pConn *PlayerConn) {
 	//join thông qua send vào goroutine room.listenAndServe()
-	room := p.r
-	room.join <- p
+	room := pConn.r
+	room.join <- pConn
 
 }
 
@@ -123,7 +123,7 @@ func (i *InMemoryRoomManager) JoinRoom(roomID string, key string) (RoomDTO, erro
 		return RoomDTO{}, fmt.Errorf("not found")
 	}
 	room := i.Rooms[roomID]
-	if len(room.Players) >= 2 {
+	if len(room.PlayerConns) >= 2 {
 		return RoomDTO{}, fmt.Errorf("room is full")
 	}
 	//check key

@@ -58,7 +58,7 @@ Message Flow:
 	      ↓
 	   p.conn.ReadMessage()
 	      ↓
-	   handleMessage() ==> r.Game.receiveInput(serverFrame, inputBuffer)
+	   handleMessage() ==> r.Game.receiveInput(tickFrame, inputBuffer)
 	  ==> apply inputBuffer in gameloop.onUpdate()
 	      ↓
 	   room.broadcast <- (all or exclude sender)
@@ -97,7 +97,7 @@ func (p *PlayerConn) Read() {
 			return
 		}
 		//TODO
-		p.handleGameMessage(msg)
+		p.handleMessage(msg)
 
 	}
 }
@@ -158,7 +158,7 @@ func (p *PlayerConn) Write() {
 
 }
 
-func (p *PlayerConn) handleGameMessage(raw []byte) {
+func (p *PlayerConn) handleMessage(raw []byte) {
 
 	var msg Message
 	err := json.Unmarshal(raw, &msg)
@@ -170,14 +170,14 @@ func (p *PlayerConn) handleGameMessage(raw []byte) {
 	switch msg.Type {
 
 	case "inputs":
-		p.r.game.state.recordInputs(p.ID, msg.Payload.Inputs, msg.Payload.LatestFrame, p.r.broadcast)
+		p.r.game.players[p.ID].gl.input <- msg
 
 	case "ping":
 		p.r.game.computeDelayBuffer(msg, p.r.broadcast)
 	case "start":
-		p.r.game.StartGame(p.ID, p.r.broadcast)
+		p.r.game.StartGame(p.r.broadcast)
 	case "ready":
-		p.r.game.Init(p.ID, msg, p.r.broadcast)
+		p.r.game.Init(p.r.broadcast, p.r.PlayerConns, p.ID)
 	case "pause":
 		p.r.game.Pause()
 	case "unpause":
@@ -189,7 +189,7 @@ func (p *PlayerConn) handleGameMessage(raw []byte) {
 
 }
 
-type BoardState struct {
+type BoardStateDTO struct {
 	Board [][]int `json:"board,omitempty"`
 	Block [][]int `json:"block,omitempty"`
 	CRow  int     `json:"cRow"`
@@ -203,13 +203,14 @@ type Message struct {
 	Type     string `json:"type"`
 	PlayerId string `json:"playerid,omitempty"`
 	Payload  struct {
-		LatestFrame int        `json:"latestFrame,omitempty"`
-		ListBlock   []int      `json:"listBlock,omitempty"`
-		BoardState  BoardState `json:"state,omitempty"`
-		Inputs      []Input    `json:"inputs,omitempty"`
-		StartAt     int64      `json:"startAt,omitempty"`
+		LatestFrame int           `json:"latestFrame,omitempty"`
+		ListBlock   []int         `json:"listBlock,omitempty"`
+		BoardState  BoardStateDTO `json:"state,omitempty"`
+		Inputs      []Input       `json:"inputs,omitempty"`
+		StartAt     int64         `json:"startAt,omitempty"`
 	} `json:"payload"`
-	Timestamp int64 `json:"timestamp"`
+	Timestamp int64  `json:"timestamp"`
+	Error     string `json:"error,omitempty"`
 }
 
 func NewMessage(t string) Message {
