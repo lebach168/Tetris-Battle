@@ -74,7 +74,7 @@ const createNewRoomApi = async () => {
       id: 'ABC00',
       players: [],
     },
-    ws_url: 'ws://localhost:8080/ws/match?roomid=ABC00&playerid=anon123',
+    ws_url: 'ws://localhost:8080/ws/match?roomid=ABC12&playerid=anon123',
   };
 };
 
@@ -88,7 +88,7 @@ const joinRoomApi = async (roomId: string) => {
       id: roomId,
       players: [{ id: 'anon123' }],
     },
-    ws_url: `ws://localhost:8080/ws/match?roomid=${roomId}&playerid=anon456`,
+    ws_url: `ws://localhost:8080/ws/match?roomid=ABC12&playerid=anon456`,
   };
 };
 

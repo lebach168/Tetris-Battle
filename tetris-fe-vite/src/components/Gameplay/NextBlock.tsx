@@ -1,6 +1,5 @@
-'use client';
 import { renderShapeMatrix } from '@/utils/utils';
-import { Block } from '@/types/tetris';
+import { type Block } from '@/types/tetris';
 
 export default function NextBlock({ upcoming }: { upcoming: Block }) {
   return (

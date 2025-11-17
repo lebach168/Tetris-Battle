@@ -1,85 +1,85 @@
 import { GravityCurve } from '@/utils/gamelogic.ts';
+import type { InputBuffer } from '@/types/common.ts';
 
 export const BOARD_WIDTH = 10;
 export const BOARD_HEIGHT = 22;
 export const VISIBLE_HEIGHT = 20;
 
-export type Tetromino = 'I' | 'O' | 'T' | 'S' | 'Z' | 'J' | 'L';
-export const TetrominoMap: Record<Tetromino, number> = {
+export type Tetromino = 1 | 2 | 3 | 4 | 5 | 6 | 7;
+export const TetrominoMap: Record<string, number> = {
   I: 1,
   O: 2,
   T: 3,
-  S: 4,
-  Z: 5,
-  J: 6,
-  L: 7,
+  Z: 4,
+  L: 5,
+  S: 6,
+  J: 7,
 };
-export const ReverseTetrominoMap: Record<number, Tetromino> = {
+export const ReverseTetrominoMap: Record<number, string> = {
   1: 'I',
   2: 'O',
   3: 'T',
-  4: 'S',
-  5: 'Z',
-  6: 'J',
-  7: 'L',
+  4: 'Z',
+  5: 'L',
+  6: 'S',
+  7: 'J',
 };
-export type RotationState = 0 | 1 | 2 | 3;
+
 export type Block = {
   type: Tetromino;
   shape: number[][];
-  rState: RotationState;
+  form: number;
 }; //shape change when rotate
 
 export type Cell = {
-  value: number; // 1 2 3   4 for garbage.
-  type: string; // "0" | "1" | "2" | "3" | "4" | "ghost";
+  value: number; // 1->8... 8 for garbage.
+  type?: string; //"ghost";
 };
 export type BoardGrid = Cell[][];
 export const TETROMINO_SHAPES: Record<Tetromino, number[][]> = {
-  I: [
+  1: [
     [0, 0, 0, 0],
     [1, 1, 1, 1],
     [0, 0, 0, 0],
     [0, 0, 0, 0],
   ], //I
-  O: [
-    [1, 1],
-    [1, 1],
+  2: [
+    [2, 2],
+    [2, 2],
   ], //O
-  T: [
-    [0, 1, 0],
-    [1, 1, 1],
-    [0, 0, 0],
-  ], //T
-  S: [
-    [0, 2, 2],
-    [2, 2, 0],
-    [0, 0, 0],
-  ], //S
-  Z: [
-    [3, 3, 0],
-    [0, 3, 3],
-    [0, 0, 0],
-  ], //Z
-  J: [
-    [2, 0, 0],
-    [2, 2, 2],
-    [0, 0, 0],
-  ], //J
-  L: [
-    [0, 0, 3],
+  3: [
+    [0, 3, 0],
     [3, 3, 3],
     [0, 0, 0],
+  ], //T
+  4: [
+    [4, 4, 0],
+    [0, 4, 4],
+    [0, 0, 0],
+  ], //Z
+  5: [
+    [0, 0, 5],
+    [5, 5, 5],
+    [0, 0, 0],
   ], //L
+  6: [
+    [0, 6, 6],
+    [6, 6, 0],
+    [0, 0, 0],
+  ], //S
+  7: [
+    [7, 0, 0],
+    [7, 7, 7],
+    [0, 0, 0],
+  ], //J
 };
-export const TickSpeed = {
+export const DropSpeed = {
   DropLevel: (level: number) => {
     return GravityCurve(level);
   },
-  SoftDrop: 50,
-  LockDelay: 300,
+  SoftDrop: 100,
 } as const;
-
+export const LockDelay = 300;
 // Wall Kick Data cho J, L, S, T, Z
 export const WALL_KICK_JLSTZ: Record<string, [number, number][]> = {
   '0->1': [
@@ -259,3 +259,13 @@ export const WALL_KICK_I_AKIRA: Record<string, [number, number][]> = {
 };
 
 export type BackToBackType = 'T-Spin' | 'Tetris' | 'None';
+export const keys: Array<keyof InputBuffer> = [
+  'left',
+  'right',
+  'rotate',
+  'rrotate',
+  'down',
+  'space',
+  'hold',
+  'downOff',
+];

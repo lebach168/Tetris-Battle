@@ -1,4 +1,4 @@
-import Cell from "@/components/Gameplay/Cell";
+import Cell from '@/components/Gameplay/Cell';
 
 export default function RenderShapeMatrix(shape: number[][], type: string, size = 18) {
   const rows = shape.length;
@@ -12,9 +12,9 @@ export default function RenderShapeMatrix(shape: number[][], type: string, size 
         gridTemplateColumns: `repeat(${cols}, ${size}px)`,
       }}
     >
-      {shape.flatMap((row, y) => row.map((cell, x) => <Cell key={`${y}-${x}`} type={cell ? type : "0"} size={size} />))}
+      {shape.flatMap((row, y) =>
+        row.map((cell, x) => <Cell key={`${y}-${x}`} value={cell} size={size} />),
+      )}
     </div>
   );
 }
-
-

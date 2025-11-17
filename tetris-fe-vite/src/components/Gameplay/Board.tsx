@@ -1,12 +1,16 @@
-
-import { BOARD_WIDTH, type BoardGrid, VISIBLE_HEIGHT } from "../../types/tetris";
-import Cell from "./Cell";
+import { BOARD_WIDTH, type BoardGrid, VISIBLE_HEIGHT } from '@/types/tetris.ts';
+import Cell from './Cell';
 
 const ROWS = VISIBLE_HEIGHT;
 const COLS = BOARD_WIDTH;
 
-export default function Board({ board }: { board: BoardGrid }) {
-  
+export default function Board({
+  board,
+  isOpponent,
+}: {
+  board: BoardGrid;
+  isOpponent: boolean | undefined;
+}) {
   return (
     <div
       className={`
@@ -27,10 +31,12 @@ export default function Board({ board }: { board: BoardGrid }) {
         row.map((cell, colIndex) => (
           <Cell
             key={`${rowIndex}-${colIndex}`}
-            type={cell.type || "empty"}
+            type={cell.type === 'ghost' ? 'ghost' : String(cell.value)}
+            value={cell.value}
+            opponent={!!isOpponent}
             size={20}
           />
-        ))
+        )),
       )}
     </div>
   );
